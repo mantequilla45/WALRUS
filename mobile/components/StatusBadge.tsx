@@ -3,73 +3,44 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface StatusBadgeProps {
   status: 'Idle' | 'Refilling' | 'Distilling' | 'Sleep' | 'Fault';
+  connected?: boolean;
 }
 
-const CONFIG: Record<StatusBadgeProps['status'], {
+const CONFIG: Record<string, {
   color: string;
-  bg: string;
-  border: string;
   icon: keyof typeof Ionicons.glyphMap;
 }> = {
-  Idle: {
-    color: '#94a3b8',
-    bg: '#1e293b',
-    border: '#334155',
-    icon: 'pause-circle',
-  },
-  Refilling: {
-    color: '#38bdf8',
-    bg: '#0c1e36',
-    border: '#1e3a5f',
-    icon: 'water',
-  },
-  Distilling: {
-    color: '#34d399',
-    bg: '#0a1f1a',
-    border: '#14533d',
-    icon: 'flame',
-  },
-  Sleep: {
-    color: '#a78bfa',
-    bg: '#1a0f2e',
-    border: '#3b2068',
-    icon: 'moon',
-  },
-  Fault: {
-    color: '#f87171',
-    bg: '#2a0f0f',
-    border: '#7f1d1d',
-    icon: 'alert-circle',
-  },
+  Idle: { color: '#8E8E93', icon: 'pause-circle' },
+  Refilling: { color: '#007AFF', icon: 'water' },
+  Distilling: { color: '#34C759', icon: 'flame' },
+  Sleep: { color: '#8E8E93', icon: 'moon' },
+  Fault: { color: '#FF3B30', icon: 'alert-circle' },
 };
 
-export function StatusBadge({ status }: StatusBadgeProps) {
-  const { color, bg, border, icon } = CONFIG[status];
+export function StatusBadge({ status, connected = false }: StatusBadgeProps) {
+  const { color, icon } = CONFIG[status] || CONFIG.Idle;
 
   return (
-    <View style={[styles.badge, { backgroundColor: bg, borderColor: border }]}>
-      <Ionicons name={icon} size={15} color={color} style={styles.icon} />
+    <View style={styles.row}>
+      <Ionicons name={icon} size={15} color={color} />
       <Text style={[styles.text, { color }]}>{status}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
+    gap: 6,
   },
-  icon: {
-    marginRight: 6,
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   text: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 0.3,
   },
 });

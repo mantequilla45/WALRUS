@@ -5,6 +5,8 @@ FastAPI application for local testing and development
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import os
 
@@ -57,8 +59,16 @@ async def health():
     return {
         "status": "healthy",
         "database": "connected",  # TODO: Add actual DB health check
-        "timestamp": "2025-02-11T12:00:00Z"
     }
+
+
+@app.get("/simulation")
+async def simulation_page():
+    """Serve the simulation control panel UI."""
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "static", "simulation.html"),
+        media_type="text/html"
+    )
 
 
 if __name__ == "__main__":

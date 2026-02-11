@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, RefreshControl, AppState } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import LottieView from 'lottie-react-native';
 import { SensorCard } from '@/components/SensorCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { BatteryIndicator } from '@/components/BatteryIndicator';
 import { walrusAPI, type SensorReading } from '@/services/api';
-
-const REFRESH_KEY = 'walrus_refresh_rate';
-const DEFAULT_REFRESH = 5000;
 
 export default function HomeScreen() {
   const [data, setData] = useState<SensorReading | null>(null);
@@ -16,8 +13,37 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshRate, setRefreshRate] = useState(DEFAULT_REFRESH);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fan spin animation
+  const fanSpin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (data?.fan_active) {
+      const anim = Animated.loop(
+        Animated.timing(fanSpin, { toValue: 1, duration: 1000, easing: Easing.linear, useNativeDriver: true })
+      );
+      anim.start();
+      return () => anim.stop();
+    } else {
+      fanSpin.setValue(0);
+    }
+  }, [data?.fan_active]);
+  const fanRotate = fanSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  // Solar spin animation
+  const solarSpin = useRef(new Animated.Value(0)).current;
+  const solarHigh = (data?.solar_current ?? 0) > 1.0;
+  useEffect(() => {
+    if (solarHigh) {
+      const anim = Animated.loop(
+        Animated.timing(solarSpin, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true })
+      );
+      anim.start();
+      return () => anim.stop();
+    } else {
+      solarSpin.setValue(0);
+    }
+  }, [solarHigh]);
+  const solarRotate = solarSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const fetchData = useCallback(async () => {
     try {
@@ -32,36 +58,21 @@ export default function HomeScreen() {
         setConnected(false);
       }
     } catch (e: any) {
-      setError('Cannot reach server');
+      setError('Cannot connect to database');
       setConnected(false);
     }
   }, []);
 
-  // Load saved refresh rate
-  useEffect(() => {
-    AsyncStorage.getItem(REFRESH_KEY).then((val: string | null) => {
-      if (val) setRefreshRate(parseInt(val, 10));
-    });
-  }, []);
-
-  // Listen for refresh rate changes (from Settings screen)
-  useEffect(() => {
-    const listener = AppState.addEventListener('change', () => {
-      AsyncStorage.getItem(REFRESH_KEY).then((val: string | null) => {
-        if (val) setRefreshRate(parseInt(val, 10));
-      });
-    });
-    return () => listener.remove();
-  }, []);
-
-  // Polling loop
   useEffect(() => {
     fetchData();
-    intervalRef.current = setInterval(fetchData, refreshRate);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [fetchData, refreshRate]);
+    const unsubscribe = walrusAPI.subscribeToReadings((reading) => {
+      setData(reading);
+      setLastUpdate(new Date(reading.created_at));
+      setConnected(true);
+      setError(null);
+    });
+    return () => unsubscribe();
+  }, [fetchData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -81,21 +92,28 @@ export default function HomeScreen() {
     return 'critical' as const;
   };
 
-  // Fallback when no data yet
+  const getTimeAgo = () => {
+    if (!lastUpdate) return '';
+    const diff = Math.floor((Date.now() - lastUpdate.getTime()) / 1000);
+    if (diff < 5) return 'Just now';
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    return lastUpdate.toLocaleTimeString();
+  };
+
+  // Loading / Error state
   if (!data) {
     return (
-      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Ionicons name="water" size={48} color="#22d3ee" style={{ marginBottom: 16 }} />
-        <Text style={styles.title}>WALRUS</Text>
+      <View style={[styles.container, styles.centered]}>
+        <View style={styles.loadingIcon}>
+          <Ionicons name="water" size={32} color="#007AFF" />
+        </View>
+        <Text style={styles.loadingTitle}>WALRUS</Text>
+        <Text style={styles.loadingSubtitle}>Water Purification System</Text>
         {error ? (
-          <>
-            <Text style={[styles.subtitle, { color: '#f87171', marginTop: 12 }]}>{error}</Text>
-            <Text style={[styles.subtitle, { marginTop: 6 }]}>
-              Make sure the server is running and simulation is started.
-            </Text>
-          </>
+          <Text style={styles.errorText}>{error}</Text>
         ) : (
-          <Text style={[styles.subtitle, { marginTop: 12 }]}>Connecting to server...</Text>
+          <Text style={styles.connectingText}>Connecting...</Text>
         )}
       </View>
     );
@@ -106,148 +124,170 @@ export default function HomeScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor="#22d3ee"
-          colors={['#22d3ee']}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" />
       }
     >
-      {/* Header */}
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Ionicons name="water" size={28} color="#22d3ee" />
-          <Text style={styles.title}>WALRUS</Text>
+        <View>
+          <Text style={styles.greeting}>Dashboard</Text>
         </View>
-        <Text style={styles.subtitle}>Water Purification System</Text>
+        <StatusBadge status={(data.system_state as any) || 'Idle'} />
       </View>
 
-      {/* Status Row */}
-      <View style={styles.statusRow}>
-        <StatusBadge status={(data.system_state as any) || 'Idle'} />
-        <View style={styles.statusRight}>
-          <View style={[styles.connDot, connected && styles.connDotOnline]} />
-          <Text style={styles.timestamp}>
-            {lastUpdate ? lastUpdate.toLocaleTimeString() : '--:--'}
+      {/* ── Updated timestamp ── */}
+      <Text style={styles.timestamp}>Updated {getTimeAgo()}</Text>
+
+      {/* ── Power ── */}
+      <Text style={styles.sectionLabel}>Power</Text>
+      <View style={styles.row}>
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={styles.lottieWrap}>
+              <LottieView
+                source={require('@/assets/icons/animated/wired-outline-2765-battery-levels-vertical-hover-pinch.json')}
+                autoPlay={(data.solar_current ?? 0) > 0.5}
+                loop={(data.solar_current ?? 0) > 0.5}
+                speed={0.8}
+                style={{ width: 28, height: 28, transform: [{ rotate: '90deg' }] }}
+              />
+            </View>
+            <Text style={styles.metricLabel}>Battery</Text>
+          </View>
+          <Text style={styles.metricValue}>{(data.battery_voltage ?? 0).toFixed(1)}V</Text>
+          <Text style={styles.metricSub}>
+            {Math.round(Math.min(100, Math.max(0, (((data.battery_voltage ?? 0) - 11) / 1.6) * 100)))}% charged
+          </Text>
+        </View>
+
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: '#E8F8ED' }]}>
+              <Animated.View style={solarHigh ? { transform: [{ rotate: solarRotate }] } : undefined}>
+                <Ionicons name="sunny" size={16} color="#34C759" />
+              </Animated.View>
+            </View>
+            <Text style={styles.metricLabel}>Solar</Text>
+          </View>
+          <Text style={styles.metricValue}>{(data.solar_current ?? 0).toFixed(2)}A</Text>
+          <Text style={[styles.metricSub, (data.solar_current ?? 0) > 1 ? styles.subPositive : styles.subWarning]}>
+            {(data.solar_current ?? 0) > 1 ? 'Generating' : 'Low output'}
           </Text>
         </View>
       </View>
 
-      {/* Battery & Solar */}
-      <View style={styles.section}>
-        <BatteryIndicator
-          voltage={data.battery_voltage ?? 0}
-          isCharging={(data.solar_current ?? 0) > 0.5}
-        />
-
-        <SensorCard
-          label="Solar Current"
-          value={(data.solar_current ?? 0).toFixed(2)}
-          unit="A"
-          icon={<Ionicons name="sunny" size={18} color="#fbbf24" />}
-          status={(data.solar_current ?? 0) > 1.0 ? 'normal' : 'warning'}
-        />
-      </View>
-
-      {/* Water Quality */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="water-outline" size={18} color="#38bdf8" />
-        <Text style={styles.sectionTitle}>Water Quality</Text>
-      </View>
-      <View style={styles.grid}>
-        <SensorCard
-          label="Purity (TDS)"
-          value={data.tds_ppm ?? 0}
-          unit="ppm"
-          icon={<MaterialCommunityIcons name="water-check" size={18} color="#22d3ee" />}
-          status={getTDSStatus(data.tds_ppm ?? 0)}
-          compact
-        />
-        <SensorCard
-          label="Water Level"
-          value={(data.water_level_cm ?? 0).toFixed(1)}
-          unit="cm"
-          icon={<Ionicons name="beaker-outline" size={18} color="#38bdf8" />}
-          status={(data.water_level_cm ?? 0) > 10 ? 'normal' : 'warning'}
-          compact
-        />
-      </View>
-
-      {/* Temperature */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="thermometer-outline" size={18} color="#fb923c" />
-        <Text style={styles.sectionTitle}>Temperature</Text>
-      </View>
-      <View style={styles.grid}>
-        <SensorCard
-          label="Basin"
-          value={(data.basin_temp ?? 0).toFixed(1)}
-          unit="°C"
-          icon={<Ionicons name="flame" size={18} color="#fb923c" />}
-          status={getTempStatus(data.basin_temp ?? 0)}
-          compact
-        />
-        <SensorCard
-          label="Condenser"
-          value={(data.condenser_temp ?? 0).toFixed(1)}
-          unit="°C"
-          icon={<Ionicons name="snow" size={18} color="#67e8f9" />}
-          status="normal"
-          compact
-        />
-      </View>
-
-      {/* Actuators */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="cog-outline" size={18} color="#94a3b8" />
-        <Text style={styles.sectionTitle}>Actuators</Text>
-      </View>
-      <View style={styles.grid}>
-        <View style={[styles.actuatorCard, data.pump_active && styles.actuatorActive]}>
-          <View style={[styles.actuatorIconWrap, data.pump_active && styles.actuatorIconActive]}>
-            <MaterialCommunityIcons
-              name="water-pump"
-              size={24}
-              color={data.pump_active ? '#34d399' : '#475569'}
-            />
+      {/* ── Water Quality ── */}
+      <Text style={styles.sectionLabel}>Water Quality</Text>
+      <View style={styles.row}>
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: '#EBF5FF' }]}>
+              <MaterialCommunityIcons name="water-check" size={16} color="#007AFF" />
+            </View>
+            <Text style={styles.metricLabel}>Purity (TDS)</Text>
           </View>
-          <Text style={styles.actuatorLabel}>Pump</Text>
-          <View style={[styles.actuatorStatusPill, data.pump_active && styles.pillActive]}>
-            <View style={[styles.pillDot, data.pump_active && styles.pillDotActive]} />
-            <Text style={[styles.actuatorStatusText, data.pump_active && styles.statusTextActive]}>
-              {data.pump_active ? 'ON' : 'OFF'}
-            </Text>
-          </View>
+          <Text style={styles.metricValue}>{data.tds_ppm ?? 0}</Text>
+          <Text style={[
+            styles.metricSub,
+            (data.tds_ppm ?? 0) < 300 ? styles.subPositive : styles.subWarning
+          ]}>
+            {(data.tds_ppm ?? 0) < 300 ? 'Clean' : (data.tds_ppm ?? 0) < 500 ? 'Moderate' : 'Poor'} · ppm
+          </Text>
         </View>
 
-        <View style={[styles.actuatorCard, data.fan_active && styles.actuatorActive]}>
-          <View style={[styles.actuatorIconWrap, data.fan_active && styles.actuatorIconActive]}>
-            <MaterialCommunityIcons
-              name="fan"
-              size={24}
-              color={data.fan_active ? '#34d399' : '#475569'}
-            />
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
+              <Ionicons name="water-outline" size={16} color="#5AC8FA" />
+            </View>
+            <Text style={styles.metricLabel}>Water Level</Text>
           </View>
-          <Text style={styles.actuatorLabel}>Fan</Text>
-          <View style={[styles.actuatorStatusPill, data.fan_active && styles.pillActive]}>
-            <View style={[styles.pillDot, data.fan_active && styles.pillDotActive]} />
-            <Text style={[styles.actuatorStatusText, data.fan_active && styles.statusTextActive]}>
-              {data.fan_active ? 'ON' : 'OFF'}
-            </Text>
-          </View>
+          <Text style={styles.metricValue}>{(data.water_level_cm ?? 0).toFixed(1)}</Text>
+          <Text style={[
+            styles.metricSub,
+            (data.water_level_cm ?? 0) > 10 ? styles.subPositive : styles.subWarning
+          ]}>
+            {(data.water_level_cm ?? 0) > 10 ? 'Normal' : 'Low'} · cm
+          </Text>
         </View>
       </View>
 
-      {/* Info Banner */}
-      <View style={styles.infoBanner}>
-        <Ionicons name="pulse-outline" size={14} color="#64748b" />
-        <Text style={styles.infoText}>
-          Live data — Refreshing every {refreshRate / 1000}s
-        </Text>
+      {/* ── Temperature ── */}
+      <Text style={styles.sectionLabel}>Temperature</Text>
+      <View style={styles.row}>
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: '#FFF3E0' }]}>
+              <Ionicons name="flame" size={16} color="#FF9500" />
+            </View>
+            <Text style={styles.metricLabel}>Basin</Text>
+          </View>
+          <Text style={styles.metricValue}>{(data.basin_temp ?? 0).toFixed(1)}°</Text>
+          <Text style={[
+            styles.metricSub,
+            (data.basin_temp ?? 0) < 50 ? styles.subPositive : styles.subWarning
+          ]}>
+            {(data.basin_temp ?? 0) < 50 ? 'Normal' : (data.basin_temp ?? 0) < 55 ? 'Warm' : 'Hot'} · °C
+          </Text>
+        </View>
+
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
+              <Ionicons name="snow" size={16} color="#5AC8FA" />
+            </View>
+            <Text style={styles.metricLabel}>Condenser</Text>
+          </View>
+          <Text style={styles.metricValue}>{(data.condenser_temp ?? 0).toFixed(1)}°</Text>
+          <Text style={[styles.metricSub, styles.subPositive]}>Normal · °C</Text>
+        </View>
       </View>
 
-      <View style={styles.footer} />
+      {/* ── Actuators ── */}
+      <Text style={styles.sectionLabel}>Actuators</Text>
+      <View style={styles.row}>
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: data.pump_active ? '#EBF5FF' : '#F2F2F7' }]}>
+              <MaterialCommunityIcons
+                name="water-pump"
+                size={16}
+                color={data.pump_active ? '#007AFF' : '#C7C7CC'}
+              />
+            </View>
+            <Text style={styles.metricLabel}>Pump</Text>
+          </View>
+          <Text style={[styles.metricValue, !data.pump_active && styles.valueOff]}>
+            {data.pump_active ? 'ON' : 'OFF'}
+          </Text>
+          <Text style={[styles.metricSub, data.pump_active ? styles.subPositive : {}]}>
+            {data.pump_active ? 'Active' : 'Idle'}
+          </Text>
+        </View>
+
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: data.fan_active ? '#EBF5FF' : '#F2F2F7' }]}>
+              <Animated.View style={data.fan_active ? { transform: [{ rotate: fanRotate }] } : undefined}>
+                <MaterialCommunityIcons
+                  name="fan"
+                  size={16}
+                  color={data.fan_active ? '#007AFF' : '#C7C7CC'}
+                />
+              </Animated.View>
+            </View>
+            <Text style={styles.metricLabel}>Fan</Text>
+          </View>
+          <Text style={[styles.metricValue, !data.fan_active && styles.valueOff]}>
+            {data.fan_active ? 'ON' : 'OFF'}
+          </Text>
+          <Text style={[styles.metricSub, data.fan_active ? styles.subPositive : {}]}>
+            {data.fan_active ? 'Active' : 'Idle'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ height: 30 }} />
     </ScrollView>
   );
 }
@@ -255,164 +295,153 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#080c14',
+    backgroundColor: '#F5F6FA',
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
-    paddingBottom: 20,
+    paddingBottom: 34,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 62,
-    paddingBottom: 20,
-    backgroundColor: '#0b1120',
-    borderBottomWidth: 1,
-    borderBottomColor: '#141e30',
-  },
-  titleRow: {
-    flexDirection: 'row',
+
+  // ── Loading ──
+  loadingIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: '#EBF5FF',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 4,
+    justifyContent: 'center',
+    marginBottom: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#e2e8f0',
-    letterSpacing: 2,
+  loadingTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    letterSpacing: 1.5,
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#FF3B30',
+    fontWeight: '500',
+    marginTop: 20,
+  },
+  connectingText: {
+    fontSize: 13,
+    color: '#007AFF',
+    marginTop: 20,
+  },
+
+  // ── Header ──
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 2,
+  },
+  greeting: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1C1C1E',
   },
   subtitle: {
     fontSize: 13,
-    color: '#536178',
-    marginLeft: 38,
-    fontWeight: '500',
+    color: '#8E8E93',
+    marginTop: 3,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  statusRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  connDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ef4444',
-  },
-  connDotOnline: {
-    backgroundColor: '#22c55e',
-  },
+
+  // ── Timestamp ──
   timestamp: {
     fontSize: 12,
-    color: '#475569',
-    fontVariant: ['tabular-nums'],
-  },
-  section: {
+    color: '#AEAEB2',
     paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 6,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  // ── Sections ──
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1C1C1E',
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 10,
-    gap: 8,
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  grid: {
+  row: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     gap: 10,
   },
-  actuatorCard: {
+
+  // ── Metric Card (Aura style) ──
+  metricCard: {
     flex: 1,
-    backgroundColor: '#111a2b',
-    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1a2540',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  actuatorActive: {
-    borderColor: '#14533d',
-    backgroundColor: '#0a1a15',
-  },
-  actuatorIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#1a2540',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  actuatorIconActive: {
-    backgroundColor: 'rgba(52, 211, 153, 0.12)',
-  },
-  actuatorLabel: {
-    fontSize: 13,
-    color: '#8494a7',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  actuatorStatusPill: {
+  metricHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    gap: 8,
+    marginBottom: 14,
+  },
+  metricIcon: {
+    width: 32,
+    height: 32,
     borderRadius: 10,
-    backgroundColor: '#1a2540',
-    gap: 6,
-  },
-  pillActive: {
-    backgroundColor: 'rgba(52, 211, 153, 0.12)',
-  },
-  pillDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#475569',
-  },
-  pillDotActive: {
-    backgroundColor: '#34d399',
-  },
-  actuatorStatusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    letterSpacing: 0.5,
-  },
-  statusTextActive: {
-    color: '#34d399',
-  },
-  infoBanner: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
-    marginTop: 20,
-    paddingVertical: 10,
-    gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#141e30',
   },
-  infoText: {
-    fontSize: 11,
-    color: '#475569',
+  lottieWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#E8F8ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  metricLabel: {
+    fontSize: 13,
     fontWeight: '500',
+    color: '#8E8E93',
+    flex: 1,
   },
-  footer: {
-    height: 20,
+  metricValue: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  valueOff: {
+    color: '#C7C7CC',
+  },
+  metricSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#AEAEB2',
+  },
+  subPositive: {
+    color: '#34C759',
+  },
+  subWarning: {
+    color: '#FF9F0A',
   },
 });

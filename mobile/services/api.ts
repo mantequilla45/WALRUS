@@ -1,32 +1,11 @@
 /**
  * WALRUS API Service
- * Handles all API calls to the backend server
+ * Queries Supabase directly for sensor data
  */
 
-import axios from 'axios';
-
-// Get API URL from environment variables
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-
-// Create axios instance with default config
-const apiClient = axios.create({
-  baseURL: `${API_URL}/api/mobile`,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import { supabase } from './supabase';
 
 // Types
-export interface SensorData {
-  basin_temp: number | null;
-  condenser_temp: number | null;
-  tds_ppm: number | null;
-  water_level_cm: number | null;
-  battery_voltage: number | null;
-  solar_current: number | null;
-}
-
 export interface SensorReading {
   id: number;
   created_at: string;
@@ -48,111 +27,102 @@ export interface LatestDataResponse {
   message?: string;
 }
 
-export interface HistoricalDataResponse {
-  success: boolean;
-  data: SensorReading[];
-  count: number;
-  duration: string;
-}
-
-export interface SystemStatus {
-  status: 'online' | 'offline';
-  last_seen: string | null;
-  system_state: string | null;
-  battery_voltage: number | null;
-  warnings: string[];
-  device_id: string;
-}
-
-export interface Statistics {
-  count: number;
-  duration: string;
-  basin_temp: {
-    avg: number | null;
-    min: number | null;
-    max: number | null;
-  };
-  condenser_temp: {
-    avg: number | null;
-    min: number | null;
-    max: number | null;
-  };
-  tds_ppm: {
-    avg: number | null;
-    min: number | null;
-    max: number | null;
-  };
-  battery_voltage: {
-    avg: number | null;
-    min: number | null;
-    max: number | null;
-  };
-}
-
 /**
- * WALRUS API Client
+ * WALRUS API Client — Direct Supabase Queries
  */
 export const walrusAPI = {
   /**
    * Get the latest sensor reading
    */
   getLatest: async (deviceId?: string): Promise<LatestDataResponse> => {
-    const params = deviceId ? { device_id: deviceId } : {};
-    const response = await apiClient.get<LatestDataResponse>('/latest', { params });
-    return response.data;
+    try {
+      let query = supabase
+        .from('sensor_readings')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (deviceId) {
+        query = query.eq('device_id', deviceId);
+      }
+
+      const { data, error } = await query.single();
+
+      if (error) {
+        return { success: false, data: null, message: error.message };
+      }
+
+      return { success: true, data };
+    } catch (e: any) {
+      return { success: false, data: null, message: e.message || 'Failed to fetch data' };
+    }
   },
 
   /**
    * Get historical sensor data
-   * @param duration - Time range: '1h', '24h', '7d', '30d'
-   * @param deviceId - Optional device ID filter
    */
   getHistory: async (
     duration: '1h' | '24h' | '7d' | '30d' = '24h',
     deviceId?: string
-  ): Promise<HistoricalDataResponse> => {
-    const params: any = { duration };
-    if (deviceId) params.device_id = deviceId;
-    const response = await apiClient.get<HistoricalDataResponse>('/history', { params });
-    return response.data;
-  },
+  ): Promise<{ success: boolean; data: SensorReading[]; count: number }> => {
+    const durationMap: Record<string, number> = {
+      '1h': 60 * 60 * 1000,
+      '24h': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+    };
 
-  /**
-   * Get system status and health
-   */
-  getStatus: async (deviceId?: string): Promise<SystemStatus> => {
-    const params = deviceId ? { device_id: deviceId } : {};
-    const response = await apiClient.get<SystemStatus>('/status', { params });
-    return response.data;
-  },
+    const since = new Date(Date.now() - durationMap[duration]).toISOString();
 
-  /**
-   * Get statistical summary
-   * @param duration - Time range: '1h', '24h', '7d', '30d'
-   * @param deviceId - Optional device ID filter
-   */
-  getStats: async (
-    duration: '1h' | '24h' | '7d' | '30d' = '24h',
-    deviceId?: string
-  ): Promise<Statistics> => {
-    const params: any = { duration };
-    if (deviceId) params.device_id = deviceId;
-    const response = await apiClient.get<Statistics>('/stats', { params });
-    return response.data;
-  },
-
-  /**
-   * Check if backend is reachable
-   */
-  healthCheck: async (): Promise<boolean> => {
     try {
-      const response = await axios.get(`${API_URL}/health`);
-      return response.status === 200;
+      let query = supabase
+        .from('sensor_readings')
+        .select('*')
+        .gte('created_at', since)
+        .order('created_at', { ascending: true });
+
+      if (deviceId) {
+        query = query.eq('device_id', deviceId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return { success: false, data: [], count: 0 };
+      }
+
+      return { success: true, data: data || [], count: data?.length || 0 };
     } catch {
-      return false;
+      return { success: false, data: [], count: 0 };
     }
   },
-};
 
-// Export axios instance for custom requests
-export { apiClient };
+  /**
+   * Subscribe to real-time sensor updates
+   */
+  subscribeToReadings: (
+    callback: (reading: SensorReading) => void,
+    deviceId?: string
+  ) => {
+    const channel = supabase
+      .channel('sensor_readings_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sensor_readings',
+          ...(deviceId ? { filter: `device_id=eq.${deviceId}` } : {}),
+        },
+        (payload) => {
+          callback(payload.new as SensorReading);
+        }
+      )
+      .subscribe();
+
+    // Return unsubscribe function
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+};

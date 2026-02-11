@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WALRUS Simulation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F5F6FA;
+      color: #1C1C1E;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: #fff;
+      border-bottom: 1px solid #E5E5EA;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .header h1 span { color: #007AFF; }
+    .header-sub { font-size: 13px; color: #8E8E93; margin-top: 2px; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .status-badge.running { background: #E8F8ED; color: #34C759; }
+    .status-badge.stopped { background: #F2F2F7; color: #8E8E93; }
+    .status-badge .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor;
+    }
+    .status-badge.running .dot { animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .btn {
+      padding: 10px 24px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-start { background: #007AFF; color: #fff; }
+    .btn-start:hover { background: #0066D6; }
+    .btn-stop { background: #FF3B30; color: #fff; }
+    .btn-stop:hover { background: #D63028; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .interval-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      background: #fff;
+      padding: 6px 14px;
+      border-radius: 10px;
+      border: 1px solid #E5E5EA;
+    }
+    .interval-group label {
+      font-size: 13px;
+      color: #8E8E93;
+      font-weight: 500;
+    }
+    .interval-group input {
+      width: 56px;
+      padding: 4px 8px;
+      border: 1px solid #E5E5EA;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      color: #1C1C1E;
+    }
+    .interval-group input:focus { outline: none; border-color: #007AFF; }
+    .interval-group span { font-size: 12px; color: #AEAEB2; }
+
+    /* Stats Row */
+    .stats {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      flex: 1;
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #8E8E93;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-sub { font-size: 12px; color: #AEAEB2; margin-top: 2px; }
+
+    /* Live Data */
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #8E8E93;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .data-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .data-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .data-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .data-info { flex: 1; min-width: 0; }
+    .data-name {
+      font-size: 12px;
+      color: #8E8E93;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+    .data-val {
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .data-unit { font-size: 12px; color: #AEAEB2; font-weight: 500; margin-left: 2px; }
+
+    /* State badges */
+    .state-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .state-chip {
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #F2F2F7;
+      color: #8E8E93;
+    }
+    .state-chip.active { background: #EBF5FF; color: #007AFF; }
+    .state-chip.on { background: #E8F8ED; color: #34C759; }
+
+    /* Log */
+    .log-box {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: #3C3C43;
+      line-height: 1.7;
+    }
+    .log-entry { border-bottom: 1px solid #F2F2F7; padding: 4px 0; }
+    .log-entry:last-child { border: none; }
+    .log-time { color: #AEAEB2; margin-right: 8px; }
+    .log-ok { color: #34C759; }
+    .log-err { color: #FF3B30; }
+
+    .empty {
+      text-align: center;
+      padding: 40px;
+      color: #C7C7CC;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1><span>WALRUS</span> Simulation</h1>
+    <div class="header-sub">Development data generator</div>
+  </div>
+  <div id="statusBadge" class="status-badge stopped">
+    <div class="dot"></div>
+    <span>Stopped</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-start" id="btnStart" onclick="startSim()">Start</button>
+    <button class="btn btn-stop" id="btnStop" onclick="stopSim()" disabled>Stop</button>
+    <div class="interval-group">
+      <label>Interval</label>
+      <input type="number" id="intervalInput" value="1" min="1" max="300" onchange="updateInterval()">
+      <span>sec</span>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Readings Sent</div>
+      <div class="stat-value" id="tickCount">0</div>
+      <div class="stat-sub">total inserts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Device ID</div>
+      <div class="stat-value" style="font-size:16px;" id="deviceId">—</div>
+      <div class="stat-sub">simulated device</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value" id="uptime">0:00</div>
+      <div class="stat-sub">session time</div>
+    </div>
+  </div>
+
+  <!-- Live Data -->
+  <div class="section-label">Latest Reading</div>
+  <div class="data-grid" id="dataGrid">
+    <div class="empty" style="grid-column:1/-1">No data yet. Start the simulation.</div>
+  </div>
+
+  <!-- System State -->
+  <div class="section-label">System State</div>
+  <div class="state-row" id="stateRow">
+    <div class="state-chip">—</div>
+  </div>
+
+  <!-- Log -->
+  <div class="section-label">Activity Log</div>
+  <div class="log-box" id="logBox">
+    <div class="empty">Waiting for activity...</div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/simulation';
+  let pollTimer = null;
+  let startTime = null;
+  let uptimeTimer = null;
+  let logEntries = [];
+
+  function addLog(msg, type = 'ok') {
+    const now = new Date().toLocaleTimeString();
+    logEntries.unshift({ time: now, msg, type });
+    if (logEntries.length > 50) logEntries.pop();
+    renderLog();
+  }
+
+  function renderLog() {
+    const box = document.getElementById('logBox');
+    box.innerHTML = logEntries.map(e =>
+      `<div class="log-entry"><span class="log-time">${e.time}</span><span class="log-${e.type}">${e.msg}</span></div>`
+    ).join('');
+  }
+
+  async function startSim() {
+    try {
+      const res = await fetch(`${API}/start`, { method: 'POST' });
+      const data = await res.json();
+      addLog(data.message);
+      startTime = Date.now();
+      startPolling();
+      updateButtons(true);
+    } catch (e) { addLog('Failed to start: ' + e.message, 'err'); }
+  }
+
+  async function stopSim() {
+    try {
+      const res = await fetch(`${API}/stop`, { method: 'POST' });
+      const data = await res.json();
+      addLog(data.message);
+      stopPolling();
+      updateButtons(false);
+    } catch (e) { addLog('Failed to stop: ' + e.message, 'err'); }
+  }
+
+  async function updateInterval() {
+    const val = parseInt(document.getElementById('intervalInput').value) || 1;
+    try {
+      const res = await fetch(`${API}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval_seconds: val })
+      });
+      const data = await res.json();
+      addLog(`Interval → ${val}s`);
+    } catch (e) { addLog('Failed to update interval', 'err'); }
+  }
+
+  function updateButtons(running) {
+    document.getElementById('btnStart').disabled = running;
+    document.getElementById('btnStop').disabled = !running;
+    const badge = document.getElementById('statusBadge');
+    badge.className = `status-badge ${running ? 'running' : 'stopped'}`;
+    badge.querySelector('span').textContent = running ? 'Running' : 'Stopped';
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch(`${API}/status`);
+      const data = await res.json();
+      document.getElementById('tickCount').textContent = data.tick || 0;
+      document.getElementById('deviceId').textContent = data.device_id || '—';
+      document.getElementById('intervalInput').value = data.interval_seconds || 1;
+      updateButtons(data.running);
+      if (!data.running) { stopPolling(); startTime = null; }
+    } catch (e) {}
+
+    // Fetch latest reading
+    try {
+      const res = await fetch('/api/mobile/latest');
+      const result = await res.json();
+      if (result.success && result.data) renderData(result.data);
+    } catch (e) {}
+  }
+
+  function renderData(d) {
+    const items = [
+      { name: 'Basin Temp', val: d.basin_temp?.toFixed(1), unit: '°C', icon: '🔥', bg: '#FFF3E0' },
+      { name: 'Condenser', val: d.condenser_temp?.toFixed(1), unit: '°C', icon: '❄️', bg: '#E8F4FD' },
+      { name: 'TDS Purity', val: d.tds_ppm, unit: 'ppm', icon: '💧', bg: '#EBF5FF' },
+      { name: 'Water Level', val: d.water_level_cm?.toFixed(1), unit: 'cm', icon: '🌊', bg: '#E8F4FD' },
+      { name: 'Battery', val: d.battery_voltage?.toFixed(2), unit: 'V', icon: '🔋', bg: '#E8F8ED' },
+      { name: 'Solar', val: d.solar_current?.toFixed(2), unit: 'A', icon: '☀️', bg: '#FFF3E0' },
+    ];
+
+    document.getElementById('dataGrid').innerHTML = items.map(i => `
+      <div class="data-card">
+        <div class="data-icon" style="background:${i.bg}">${i.icon}</div>
+        <div class="data-info">
+          <div class="data-name">${i.name}</div>
+          <div class="data-val">${i.val}<span class="data-unit">${i.unit}</span></div>
+        </div>
+      </div>
+    `).join('');
+
+    // State chips
+    const states = [
+      { label: d.system_state || 'Idle', active: true },
+      { label: 'Pump', on: d.pump_active },
+      { label: 'Fan', on: d.fan_active },
+    ];
+    document.getElementById('stateRow').innerHTML = states.map(s =>
+      `<div class="state-chip${s.active ? ' active' : s.on ? ' on' : ''}">${s.label}${s.on !== undefined ? (s.on ? ' ON' : ' OFF') : ''}</div>`
+    ).join('');
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollStatus();
+    pollTimer = setInterval(pollStatus, 1000);
+    startTime = startTime || Date.now();
+    uptimeTimer = setInterval(updateUptime, 1000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (uptimeTimer) { clearInterval(uptimeTimer); uptimeTimer = null; }
+  }
+
+  function updateUptime() {
+    if (!startTime) return;
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    document.getElementById('uptime').textContent = `${m}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  // Init: check status on load
+  (async () => {
+    try {
+      const res = await fetch(`${API}/status`);
+      const data = await res.json();
+      updateButtons(data.running);
+      document.getElementById('tickCount').textContent = data.tick || 0;
+      document.getElementById('deviceId').textContent = data.device_id || '—';
+      document.getElementById('intervalInput').value = data.interval_seconds || 1;
+      if (data.running) startPolling();
+    } catch (e) { addLog('Server not reachable', 'err'); }
+  })();
+</script>
+</body>
+</html>

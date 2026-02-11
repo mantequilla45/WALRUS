@@ -20,7 +20,7 @@ class SimulationService:
         self.table_name = "sensor_readings"
         self._task: Optional[asyncio.Task] = None
         self._running = False
-        self.interval_seconds = 5
+        self.interval_seconds = 1
         self.device_id = "WALRUS_SIM"
 
         # Internal state for smooth transitions
