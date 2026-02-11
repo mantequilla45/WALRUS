@@ -1,96 +1,162 @@
 # Project WALRUS - Task Checklist
 
+## 📊 Progress Overview
+
+**Last Updated:** February 11, 2026
+
+### Overall Progress Summary
+
+| Phase | Status | Completed | Total | Progress |
+|-------|--------|-----------|-------|----------|
+| **Pre-Implementation** | ✅ Complete | 9/9 | 9 | 100% |
+| **Phase 1: Backend** | 🚧 In Progress | 21/32 | 32 | 66% |
+| **Phase 2: ESP32** | ⏳ Pending | 0/14 | 14 | 0% |
+| **Phase 3: Mobile** | 🚧 In Progress | 18/52 | 52 | 35% |
+| **Phase 4: Deployment** | ⏳ Pending | 0/15 | 15 | 0% |
+| **Phase 5: Mobile Deploy** | ⏳ Pending | 0/9 | 9 | 0% |
+| **Phase 6: Testing** | ⏳ Pending | 0/15 | 15 | 0% |
+| **TOTAL** | 🚧 | **48/146** | **146** | **33%** |
+
+### 🎯 Current Focus
+
+**Backend Development (Phase 1)**
+- ✅ Server structure created (Python/FastAPI)
+- ✅ All API endpoints coded
+- ⏳ Need: Supabase database setup
+- ⏳ Need: Test endpoints with real data
+
+**Mobile App (Phase 3)**
+- ✅ Dashboard UI complete with simulated data
+- ✅ Core components built (SensorCard, StatusBadge, Battery)
+- ✅ API service layer ready
+- ⏳ Need: Connect to real backend
+- ⏳ Need: Build history/alerts screens
+
+### 📝 Next Steps
+
+1. **Set up Supabase database** (15 min)
+   - Create account and project
+   - Run SQL to create tables
+   - Copy credentials to `.env.local`
+
+2. **Test backend locally** (10 min)
+   - Run `python main.py`
+   - Test endpoints with curl
+
+3. **Connect mobile to backend** (20 min)
+   - Update mobile `.env.local` with API URL
+   - Replace simulated data with API calls
+   - Test on Android emulator
+
+4. **Deploy backend to Vercel** (15 min)
+   - Run `vercel` command
+   - Set environment variables
+   - Test deployed API
+
+---
+
 ## Pre-Implementation Setup
 
 ### Decision Phase
-- [ ] Choose backend technology (Node.js or Python)
-- [ ] Choose database (PostgreSQL or MongoDB)
-- [ ] Choose hosting provider (Railway, Render, or DigitalOcean)
-- [ ] Decide on authentication strategy (API keys only, or user accounts?)
-- [ ] Set up project repositories structure
+- [x] Choose backend technology: **Python + FastAPI**
+- [x] Choose database: **Supabase (PostgreSQL)**
+- [x] Choose hosting provider: **Vercel**
+- [x] Decide on authentication strategy: **User Accounts + API Keys**
+- [x] Set up project repositories structure
 
 ### Repository Setup
-- [ ] Create `/server` folder in WALRUS repo (or separate repo?)
-- [ ] Initialize git for server folder
-- [ ] Set up `.gitignore` for server
-- [ ] Create initial `README.md` for server
+- [x] Create `/server` folder in WALRUS repo
+- [x] Initialize git for server folder
+- [x] Set up `.gitignore` for server
+- [x] Create initial `README.md` for server
 
 ---
 
 ## Phase 1: Backend Server Development
 
 ### 1.1 Initial Backend Setup
-- [ ] Initialize Node.js project (`npm init`)
-- [ ] Install core dependencies:
-  - [ ] Express.js
-  - [ ] PostgreSQL client (pg) or MongoDB (mongoose)
-  - [ ] dotenv (environment variables)
-  - [ ] cors (cross-origin requests)
-  - [ ] socket.io (WebSocket)
-- [ ] Create folder structure (`src/`, `config/`, `routes/`, `controllers/`, `models/`)
-- [ ] Set up `.env` file with database credentials
-- [ ] Create basic Express server (`app.js`)
-- [ ] Test server runs on localhost
+- [x] Initialize Python project with FastAPI
+- [x] Install core dependencies:
+  - [x] FastAPI
+  - [x] Supabase client (PostgreSQL)
+  - [x] python-dotenv (environment variables)
+  - [x] CORS middleware
+  - [x] Pydantic (validation)
+- [x] Create folder structure (`api/`, `config/`, `models/`, `services/`, `middleware/`)
+- [x] Set up `.env.example` file template
+- [ ] Create `.env.local` file with your credentials
+- [x] Create FastAPI server (`main.py` + `api/index.py` for Vercel)
+- [ ] Test server runs on localhost (`python main.py`)
 
 ### 1.2 Database Setup
-- [ ] Install PostgreSQL locally or set up cloud database
-- [ ] Create database named `walrus_db`
-- [ ] Create `sensor_readings` table with schema
-- [ ] Create indexes on `timestamp` column for performance
+- [ ] Create Supabase account and project
+- [ ] Create `sensor_readings` table with schema (SQL in backend QUICKSTART.md)
+- [ ] Create indexes on `created_at` and `device_id` columns
+- [ ] Copy Supabase URL and keys to server `.env.local`
 - [ ] Test database connection from backend
-- [ ] Create database migration files (optional)
+- [ ] Set up Row Level Security (RLS) policies (optional)
 
 ### 1.3 ESP32 Data Ingestion Endpoint
-- [ ] Create `routes/esp32.routes.js`
-- [ ] Implement `POST /api/data` endpoint
-- [ ] Add request validation middleware
-- [ ] Add API key authentication middleware
-- [ ] Parse JSON payload from ESP32
-- [ ] Insert data into database
-- [ ] Return success/error response
-- [ ] Test endpoint with Postman/Thunder Client
+- [x] Create `api/esp32.py` routes
+- [x] Implement `POST /api/esp32/data` endpoint
+- [x] Add request validation with Pydantic models
+- [x] Add API key authentication middleware
+- [x] Parse JSON payload from ESP32
+- [x] Insert data into database via Supabase client
+- [x] Return success/error response
+- [ ] Test endpoint with curl/Postman after database setup
 
 ### 1.4 Mobile API Endpoints
-- [ ] Create `routes/mobile.routes.js`
-- [ ] Implement `GET /api/latest` - latest sensor reading
-- [ ] Implement `GET /api/history?duration=24h` - historical data
-- [ ] Implement `GET /api/status` - system health
-- [ ] Implement `GET /api/stats` - analytics (avg, min, max)
-- [ ] Add query parameter validation
-- [ ] Add error handling for all routes
-- [ ] Test all endpoints with sample data
+- [x] Create `api/mobile.py` routes
+- [x] Implement `GET /api/mobile/latest` - latest sensor reading
+- [x] Implement `GET /api/mobile/history?duration=24h` - historical data
+- [x] Implement `GET /api/mobile/status` - system health
+- [x] Implement `GET /api/mobile/stats` - analytics (avg, min, max)
+- [x] Add query parameter validation
+- [x] Add error handling for all routes
+- [ ] Test all endpoints with sample data after database setup
 
-### 1.5 WebSocket Real-time Updates
-- [ ] Set up Socket.IO server
+### 1.5 Real-time Updates (Optional - can use polling for now)
+- [ ] Set up WebSocket server (FastAPI WebSocket support)
 - [ ] Create WebSocket event handlers
 - [ ] Emit `sensor-update` event when new data arrives
 - [ ] Implement connection authentication
 - [ ] Handle client connect/disconnect
 - [ ] Test WebSocket connection with a client tool
+- **Note:** Mobile app currently uses 5-second polling (simulated data)
 
 ### 1.6 Additional Backend Features
-- [ ] Add logging (Winston or Morgan)
-- [ ] Add rate limiting (express-rate-limit)
-- [ ] Create health check endpoint (`GET /health`)
-- [ ] Add CORS configuration
-- [ ] Create API documentation (Swagger/OpenAPI - optional)
-- [ ] Write unit tests for critical endpoints (optional)
+- [ ] Add logging (Python logging module)
+- [ ] Add rate limiting (slowapi)
+- [x] Create health check endpoint (`GET /health`)
+- [x] Add CORS configuration
+- [x] Auto-generated API docs available at `/docs` (FastAPI feature)
+- [ ] Write unit tests for critical endpoints (pytest - optional)
 
 ---
 
 ## Phase 2: ESP32 Integration
 
-### 2.1 ESP32 Code Configuration
+### 2.1 SIM/Cellular Module Setup
+- [ ] Choose SIM module (SIM7000G or SIM7600)
+- [ ] Wire SIM module to ESP32 (UART TX/RX, power)
+- [ ] Install TinyGSM and ArduinoHttpClient libraries
+- [ ] Configure APN settings for SIM card provider
+- [ ] Test cellular connection (AT commands, signal strength)
+- [ ] Verify internet access via SIM module
+
+### 2.2 ESP32 Code Configuration
 - [ ] Review existing ESP32 firmware code
+- [ ] Initialize SIM module on startup (modem.restart, gprsConnect)
 - [ ] Update server URL to point to new backend
-- [ ] Update API endpoint path (`/api/data`)
+- [ ] Update API endpoint path (`/api/esp32/data`)
 - [ ] Add API key header to HTTP requests
-- [ ] Ensure JSON payload matches expected format
+- [ ] Ensure JSON payload matches expected format (see ESP32_DATA_SPEC.md)
 - [ ] Add error handling for failed requests
 - [ ] Implement retry logic (3 attempts)
-- [ ] Test Wi-Fi connection stability
+- [ ] Test cellular connection stability
 
-### 2.2 Data Format Validation
+### 2.3 Data Format Validation
 - [ ] Verify JSON payload structure
 - [ ] Ensure all sensor values are included
 - [ ] Add device ID to payload
@@ -98,12 +164,13 @@
 - [ ] Test with actual ESP32 hardware
 - [ ] Verify data appears in database
 
-### 2.3 ESP32 Testing
+### 2.4 ESP32 Testing
 - [ ] Test data transmission every 5 minutes
 - [ ] Verify backend receives and stores data correctly
 - [ ] Check for missing or duplicate readings
 - [ ] Test behavior when server is offline
-- [ ] Test behavior during Wi-Fi disconnection
+- [ ] Test behavior during cellular disconnection / poor signal
+- [ ] Test SIM module reconnection after signal loss
 - [ ] Monitor ESP32 serial output for errors
 
 ---
@@ -111,78 +178,83 @@
 ## Phase 3: Mobile App Development
 
 ### 3.1 Project Setup
-- [ ] Navigate to `/mobile` folder
-- [ ] Install dependencies (`npm install`)
-- [ ] Test app runs on Expo Go (`npx expo start`)
-- [ ] Install additional packages:
-  - [ ] axios (HTTP requests)
-  - [ ] @tanstack/react-query (data fetching)
-  - [ ] socket.io-client (WebSocket)
-  - [ ] react-native-chart-kit (charts)
-  - [ ] zustand or react-context (state management)
-- [ ] Create TypeScript types for sensor data
+- [x] Navigate to `/mobile` folder
+- [x] Install dependencies (`npm install`)
+- [ ] Test app runs on Android (`npm run android`)
+- [ ] Install additional packages (when needed):
+  - [x] axios (HTTP requests) - added to services/api.ts
+  - [ ] @tanstack/react-query (data fetching) - for later
+  - [ ] socket.io-client (WebSocket) - optional, using polling for now
+  - [ ] react-native-chart-kit (charts) - for history screen
+  - [ ] zustand or react-context (state management) - using local state for now
+- [x] Create TypeScript types for sensor data (in services/api.ts)
 
 ### 3.2 API Service Layer
-- [ ] Create `services/api.ts`
-- [ ] Configure Axios instance with base URL
-- [ ] Implement `getLatest()` function
-- [ ] Implement `getHistory(duration)` function
-- [ ] Implement `getStatus()` function
-- [ ] Implement `getStats()` function
-- [ ] Add error handling and retry logic
-- [ ] Test API calls with mock backend
+- [x] Create `services/api.ts`
+- [x] Configure Axios instance with base URL (from environment)
+- [x] Implement `getLatest()` function
+- [x] Implement `getHistory(duration)` function
+- [x] Implement `getStatus()` function
+- [x] Implement `getStats()` function
+- [x] Add error handling and retry logic
+- [ ] Test API calls with real backend (after backend deployment)
 
-### 3.3 WebSocket Service
-- [ ] Create `services/websocket.ts`
-- [ ] Set up Socket.IO client connection
-- [ ] Implement event listeners for `sensor-update`
-- [ ] Handle connection errors and reconnection
-- [ ] Create custom React hook `useWebSocket()`
-- [ ] Test real-time updates
+### 3.3 Real-time Updates (Using polling for now)
+- [ ] Create `services/websocket.ts` (optional - WebSocket)
+- [ ] Set up Socket.IO client connection (optional)
+- [ ] Implement event listeners for `sensor-update` (optional)
+- [ ] Handle connection errors and reconnection (optional)
+- [ ] Create custom React hook `useWebSocket()` (optional)
+- [x] **Alternative:** Using 5-second polling in dashboard (works well for now)
+- [ ] Test real-time updates with backend
 
 ### 3.4 State Management
-- [ ] Create `context/DeviceContext.tsx` or Zustand store
+- [ ] Create `context/DeviceContext.tsx` or Zustand store (optional for now)
+- [x] **Currently:** Using local state (useState) in each screen
 - [ ] Define global state shape (latestData, connectionStatus, etc.)
 - [ ] Implement actions (updateData, setConnectionStatus)
 - [ ] Wrap app with context provider
 - [ ] Test state updates across screens
+- **Note:** Local state works fine for single-screen prototype
 
 ### 3.5 Reusable Components
-- [ ] Create `components/SensorCard.tsx`
-  - [ ] Props: label, value, unit, icon, status
-  - [ ] Conditional styling based on status (normal/warning/critical)
-- [ ] Create `components/StatusIndicator.tsx`
-  - [ ] Display system state (Idle/Refilling/Distilling)
-  - [ ] Color-coded badge
-- [ ] Create `components/BatteryIndicator.tsx`
-  - [ ] Visual battery level (0-100%)
-  - [ ] Warning when <20%
-- [ ] Create `components/LiveChart.tsx`
+- [x] Create `components/SensorCard.tsx`
+  - [x] Props: label, value, unit, icon, status
+  - [x] Conditional styling based on status (normal/warning/critical)
+- [x] Create `components/StatusBadge.tsx`
+  - [x] Display system state (Idle/Refilling/Distilling/Sleep/Fault)
+  - [x] Color-coded badge with icons
+- [x] Create `components/BatteryIndicator.tsx`
+  - [x] Visual battery level (0-100%)
+  - [x] Voltage display, percentage, charging indicator
+- [ ] Create `components/LiveChart.tsx` (for history screen)
   - [ ] Line chart for real-time data
   - [ ] Auto-scrolling X-axis
 
 ### 3.6 Screen Development
 
 #### Home/Dashboard Screen (`app/(tabs)/index.tsx`)
-- [ ] Create layout with system status card
-- [ ] Display latest sensor readings (4-6 cards)
-- [ ] Show battery level indicator
-- [ ] Show solar charging status
-- [ ] Add last update timestamp
-- [ ] Add pull-to-refresh functionality
-- [ ] Test with live data
+- [x] Create layout with system status card
+- [x] Display latest sensor readings (6 cards: TDS, water level, 2 temps, solar, battery)
+- [x] Show battery level indicator with visual meter
+- [x] Show solar charging status
+- [x] Add last update timestamp
+- [x] Add pull-to-refresh functionality
+- [x] **Currently:** Using simulated data (updates every 5 seconds)
+- [ ] Connect to real backend API
+- [ ] Test with live data from ESP32
 
-#### Monitor Screen (`app/(tabs)/monitor.tsx`)
+#### Monitor Screen (`app/(tabs)/monitor.tsx`) - Not started
 - [ ] Create real-time data display
 - [ ] Implement live charts for:
   - [ ] Basin temperature over time
   - [ ] TDS levels over time
   - [ ] Water level over time
-- [ ] Connect to WebSocket for auto-updates
+- [ ] Connect to polling or WebSocket for auto-updates
 - [ ] Add chart time range selector (5min, 15min, 1hr)
 - [ ] Test real-time updates
 
-#### History Screen (`app/(tabs)/history.tsx`)
+#### History Screen (`app/(tabs)/history.tsx`) - Not started
 - [ ] Create date range picker
 - [ ] Fetch historical data based on selected range
 - [ ] Display charts for 24h, 7d, 30d views
@@ -190,7 +262,7 @@
 - [ ] Show statistics (avg, min, max for each sensor)
 - [ ] Add loading and error states
 
-#### Alerts Screen (`app/(tabs)/alerts.tsx`)
+#### Alerts Screen (`app/(tabs)/alerts.tsx`) - Not started
 - [ ] Create notification list UI
 - [ ] Fetch alerts from backend (if implemented)
 - [ ] Display critical events:
@@ -300,8 +372,8 @@
 - [ ] Verify data accuracy (sensor values match)
 - [ ] Test real-time updates work consistently
 - [ ] Test system under load (multiple requests)
-- [ ] Test with poor network conditions
-- [ ] Test ESP32 offline/reconnection behavior
+- [ ] Test with poor cellular signal / network conditions
+- [ ] Test ESP32 offline/reconnection behavior (SIM module recovery)
 
 ### 6.2 Performance Optimization
 - [ ] Optimize database queries (add indexes)
@@ -350,9 +422,10 @@
 ### ESP32 Enhancements
 - [ ] OTA (Over-The-Air) firmware updates
 - [ ] Remote control commands from mobile app
-- [ ] Local data buffering when offline
-- [ ] MQTT protocol instead of HTTP
+- [ ] Local data buffering when offline (SD card or SPIFFS)
+- [ ] MQTT protocol instead of HTTP (lower overhead for cellular)
 - [ ] Edge computing/local analytics
+- [ ] SIM card balance/data usage monitoring
 
 ---
 

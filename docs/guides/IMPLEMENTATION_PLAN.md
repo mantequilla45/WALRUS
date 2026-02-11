@@ -6,7 +6,8 @@
 
 ### Current Architecture (from docs)
 - **ESP32**: Collects sensor data (TDS, temperature, water level, battery voltage)
-- **Data Flow**: ESP32 → Wi-Fi → JSON payload → Cloud/Server
+- **Data Flow**: ESP32 → SIM/Cellular (4G LTE) → JSON payload → Cloud/Server
+- **Connectivity**: SIM7000G or SIM7600 GSM/LTE module (SIM card for mobile data)
 - **Sensors**: DS18B20 (temp), TDS sensor, HC-SR04 (ultrasonic), voltage monitor
 
 ---
@@ -17,8 +18,9 @@
 ┌─────────────┐
 │   ESP32     │ ← Solar-powered water purification unit
 │  (Hardware) │    Sensors: TDS, Temp, Level, Battery
+│  + SIM/LTE  │    Connectivity: SIM card (cellular data)
 └──────┬──────┘
-       │ HTTP POST (JSON)
+       │ HTTP POST (JSON) via cellular
        │ Every 5 minutes
        ▼
 ┌─────────────────────────────────────────┐
@@ -130,11 +132,18 @@ server/
 ---
 
 ### Phase 2: ESP32 Integration
-**Purpose**: Configure ESP32 to send data to your backend
+**Purpose**: Configure ESP32 to send data to your backend via cellular (SIM card)
 
-#### 2.1 ESP32 Code Updates
-- Update Wi-Fi connection to point to your backend server
-- Modify HTTP POST endpoint from old Next.js dashboard to new backend
+#### 2.1 Connectivity Setup
+- **Module**: SIM7000G (NB-IoT/LTE Cat-M1) or SIM7600 (4G LTE)
+- **SIM Card**: Prepaid IoT/data SIM with mobile data plan
+- ESP32 communicates with SIM module via UART (AT commands)
+- No Wi-Fi dependency — works anywhere with cellular coverage
+
+#### 2.2 ESP32 Code Updates
+- Initialize SIM/LTE module and establish cellular data connection
+- Configure APN settings for the SIM card provider
+- Modify HTTP POST endpoint to point to new backend
 - Add retry logic for failed transmissions
 - Implement local buffering if server is unreachable
 
@@ -159,26 +168,48 @@ server/
 }
 ```
 
-#### 2.3 ESP32 Example Code Snippet
+#### 2.3 ESP32 Example Code Snippet (SIM/Cellular)
 ```cpp
-// In your ESP32 firmware
-const char* serverUrl = "https://your-backend.railway.app/api/data";
+// In your ESP32 firmware — using TinyGSM library for SIM module
+#include <TinyGsmClient.h>
+#include <ArduinoHttpClient.h>
+
+#define MODEM_TX 17
+#define MODEM_RX 16
+
+TinyGsm modem(Serial1);
+TinyGsmClient client(modem);
+
+const char apn[]    = "your-carrier-apn";  // SIM card APN
+const char server[] = "your-backend.vercel.app";
+const int  port     = 443;
+
+void setupModem() {
+  Serial1.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  modem.restart();
+  modem.gprsConnect(apn, "", "");
+  Serial.println("Cellular connected");
+}
 
 void sendTelemetry() {
-  HTTPClient http;
-  http.begin(serverUrl);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", "your-secret-key");
+  HttpClient http(client, server, port);
+  http.beginRequest();
+  http.post("/api/esp32/data");
+  http.sendHeader("Content-Type", "application/json");
+  http.sendHeader("X-API-Key", "your-secret-key");
 
-  String payload = buildJsonPayload();  // Your existing function
-  int httpResponseCode = http.POST(payload);
+  String payload = buildJsonPayload();
+  http.sendHeader("Content-Length", payload.length());
+  http.beginBody();
+  http.print(payload);
+  http.endRequest();
 
-  if (httpResponseCode > 0) {
-    Serial.printf("Data sent successfully: %d\n", httpResponseCode);
+  int statusCode = http.responseStatusCode();
+  if (statusCode == 200) {
+    Serial.printf("Data sent successfully: %d\n", statusCode);
   } else {
-    Serial.printf("Error sending data: %s\n", http.errorToString(httpResponseCode).c_str());
+    Serial.printf("Error sending data: %d\n", statusCode);
   }
-  http.end();
 }
 ```
 

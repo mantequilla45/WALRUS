@@ -8,12 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-# Load environment variables
+# Load environment variables (.env.local takes priority, falls back to .env)
+load_dotenv(".env.local")
 load_dotenv()
 
 # Import routers
 from api.esp32 import router as esp32_router
 from api.mobile import router as mobile_router
+from api.simulation import router as simulation_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -36,6 +38,7 @@ app.add_middleware(
 # Include routers
 app.include_router(esp32_router, prefix="/api/esp32", tags=["ESP32"])
 app.include_router(mobile_router, prefix="/api/mobile", tags=["Mobile"])
+app.include_router(simulation_router, prefix="/api/simulation", tags=["Simulation"])
 
 
 @app.get("/")

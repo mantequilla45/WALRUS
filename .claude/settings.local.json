@@ -6,7 +6,11 @@
       "Bash(ForEach-Object { $_Matches })",
       "Bash(ForEach-Object { $_Groups[1].Value })",
       "Bash(powershell.exe -NoProfile -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead\\(\\(Resolve-Path ''docs/PROJECT WALRUS-CHAPTER 1.docx''\\).Path\\).Entries | Where-Object {$_Name -eq ''document.xml''} | ForEach-Object { $stream = $_Open\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); $content = $reader.ReadToEnd\\(\\); $reader.Close\\(\\); $stream.Close\\(\\); $content -replace ''<[^>]+>'','''' }\")",
-      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"extract_docx.ps1\" \"docs/PROJECT WALRUS-CHAPTER 1.docx\")"
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"extract_docx.ps1\" \"docs/PROJECT WALRUS-CHAPTER 1.docx\")",
+      "Bash(ls -la \"e:\\\\Files\\\\Vince Kevin\\\\Projects\\\\WALRUS\\\\server\"\" 2>&1 || ls -la \"E:FilesVince KevinProjectsWALRUSserver\"\")",
+      "Bash(python:*)",
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "Bash(npx expo install:*)"
     ]
   }
 }
