@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead\\(''docs/PROJECT WALRUS-CHAPTER 1.docx''\\); $entry = $zip.GetEntry\\(''word/document.xml''\\); $stream = $entry.Open\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); $content = $reader.ReadToEnd\\(\\); $reader.Close\\(\\); $stream.Close\\(\\); $zip.Dispose\\(\\); $content\")",
+      "Bash(Select-String -Pattern '&lt;w:t[^&gt;]*&gt;\\([^&lt;]+\\)&lt;/w:t&gt;' -AllMatches)",
+      "Bash(ForEach-Object { $_Matches })",
+      "Bash(ForEach-Object { $_Groups[1].Value })",
+      "Bash(powershell.exe -NoProfile -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead\\(\\(Resolve-Path ''docs/PROJECT WALRUS-CHAPTER 1.docx''\\).Path\\).Entries | Where-Object {$_Name -eq ''document.xml''} | ForEach-Object { $stream = $_Open\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); $content = $reader.ReadToEnd\\(\\); $reader.Close\\(\\); $stream.Close\\(\\); $content -replace ''<[^>]+>'','''' }\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"extract_docx.ps1\" \"docs/PROJECT WALRUS-CHAPTER 1.docx\")"
+    ]
+  }
+}
