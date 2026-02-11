@@ -9,49 +9,51 @@
 | Phase | Status | Completed | Total | Progress |
 |-------|--------|-----------|-------|----------|
 | **Pre-Implementation** | ✅ Complete | 9/9 | 9 | 100% |
-| **Phase 1: Backend** | 🚧 In Progress | 21/32 | 32 | 66% |
+| **Phase 1: Backend** | 🚧 In Progress | 28/32 | 32 | 88% |
 | **Phase 2: ESP32** | ⏳ Pending | 0/14 | 14 | 0% |
-| **Phase 3: Mobile** | 🚧 In Progress | 18/52 | 52 | 35% |
+| **Phase 3: Mobile** | 🚧 In Progress | 30/52 | 52 | 58% |
 | **Phase 4: Deployment** | ⏳ Pending | 0/15 | 15 | 0% |
 | **Phase 5: Mobile Deploy** | ⏳ Pending | 0/9 | 9 | 0% |
 | **Phase 6: Testing** | ⏳ Pending | 0/15 | 15 | 0% |
-| **TOTAL** | 🚧 | **48/146** | **146** | **33%** |
+| **TOTAL** | 🚧 | **67/146** | **146** | **46%** |
 
 ### 🎯 Current Focus
 
 **Backend Development (Phase 1)**
 - ✅ Server structure created (Python/FastAPI)
 - ✅ All API endpoints coded
-- ⏳ Need: Supabase database setup
-- ⏳ Need: Test endpoints with real data
+- ✅ Supabase database setup complete (`sensor_readings` table created)
+- ✅ Simulation service running (generates fake sensor data)
+- ✅ Environment variables configured (`.env.local`)
+- ⏳ Need: Test endpoints with real ESP32 data
 
 **Mobile App (Phase 3)**
-- ✅ Dashboard UI complete with simulated data
+- ✅ Dashboard UI complete with vector icons (no emojis)
 - ✅ Core components built (SensorCard, StatusBadge, Battery)
-- ✅ API service layer ready
-- ⏳ Need: Connect to real backend
-- ⏳ Need: Build history/alerts screens
+- ✅ API service layer ready and connected
+- ✅ Dashboard fetches live data from backend API
+- ✅ Settings screen with refresh rate selector
+- ⏳ Need: Build history/alerts/monitor screens
 
 ### 📝 Next Steps
 
-1. **Set up Supabase database** (15 min)
-   - Create account and project
-   - Run SQL to create tables
-   - Copy credentials to `.env.local`
+1. **Test live data flow** (5 min)
+   - Start server: `python main.py`
+   - Start simulation: `curl -X POST http://localhost:8000/api/simulation/start`
+   - Open mobile app → should see live data
 
-2. **Test backend locally** (10 min)
-   - Run `python main.py`
-   - Test endpoints with curl
+2. **Build Monitor screen** (30 min)
+   - Real-time charts for temperature, TDS, water level
 
-3. **Connect mobile to backend** (20 min)
-   - Update mobile `.env.local` with API URL
-   - Replace simulated data with API calls
-   - Test on Android emulator
+3. **Build History screen** (30 min)
+   - Date range picker, 24h/7d/30d views
 
-4. **Deploy backend to Vercel** (15 min)
+4. **Build Alerts screen** (20 min)
+   - Warning list for critical events
+
+5. **Deploy backend to Vercel** (15 min)
    - Run `vercel` command
    - Set environment variables
-   - Test deployed API
 
 ---
 
@@ -84,16 +86,16 @@
   - [x] Pydantic (validation)
 - [x] Create folder structure (`api/`, `config/`, `models/`, `services/`, `middleware/`)
 - [x] Set up `.env.example` file template
-- [ ] Create `.env.local` file with your credentials
+- [x] Create `.env.local` file with real Supabase credentials
 - [x] Create FastAPI server (`main.py` + `api/index.py` for Vercel)
-- [ ] Test server runs on localhost (`python main.py`)
+- [x] Test server runs on localhost (`python main.py`)
 
 ### 1.2 Database Setup
-- [ ] Create Supabase account and project
-- [ ] Create `sensor_readings` table with schema (SQL in backend QUICKSTART.md)
-- [ ] Create indexes on `created_at` and `device_id` columns
-- [ ] Copy Supabase URL and keys to server `.env.local`
-- [ ] Test database connection from backend
+- [x] Create Supabase account and project
+- [x] Create `sensor_readings` table with schema (via migration)
+- [x] Create indexes on `created_at` and `device_id` columns
+- [x] Copy Supabase URL and keys to server `.env.local`
+- [x] Test database connection from backend
 - [ ] Set up Row Level Security (RLS) policies (optional)
 
 ### 1.3 ESP32 Data Ingestion Endpoint
@@ -116,16 +118,29 @@
 - [x] Add error handling for all routes
 - [ ] Test all endpoints with sample data after database setup
 
-### 1.5 Real-time Updates (Optional - can use polling for now)
+### 1.5 Simulation Service (Development Tool)
+- [x] Create `services/simulation_service.py` - background task
+- [x] Generate realistic sensor data with smooth sinusoidal drift
+- [x] Day/night cycle for temperature and solar
+- [x] Water level drain/refill logic
+- [x] Battery charge/discharge based on solar
+- [x] Create `api/simulation.py` - control endpoints
+- [x] `POST /api/simulation/start` - start generating data
+- [x] `POST /api/simulation/stop` - stop generating data
+- [x] `GET /api/simulation/status` - check status
+- [x] `PATCH /api/simulation/config` - update interval
+- [x] Register simulation router in `main.py`
+
+### 1.6 Real-time Updates (Optional - using polling for now)
 - [ ] Set up WebSocket server (FastAPI WebSocket support)
 - [ ] Create WebSocket event handlers
 - [ ] Emit `sensor-update` event when new data arrives
 - [ ] Implement connection authentication
 - [ ] Handle client connect/disconnect
 - [ ] Test WebSocket connection with a client tool
-- **Note:** Mobile app currently uses 5-second polling (simulated data)
+- **Note:** Mobile app currently uses configurable polling (3s/5s/10s/30s)
 
-### 1.6 Additional Backend Features
+### 1.7 Additional Backend Features
 - [ ] Add logging (Python logging module)
 - [ ] Add rate limiting (slowapi)
 - [x] Create health check endpoint (`GET /health`)
@@ -181,8 +196,9 @@
 - [x] Navigate to `/mobile` folder
 - [x] Install dependencies (`npm install`)
 - [ ] Test app runs on Android (`npm run android`)
-- [ ] Install additional packages (when needed):
-  - [x] axios (HTTP requests) - added to services/api.ts
+- [x] Install additional packages:
+  - [x] axios (HTTP requests)
+  - [x] @react-native-async-storage/async-storage (settings persistence)
   - [ ] @tanstack/react-query (data fetching) - for later
   - [ ] socket.io-client (WebSocket) - optional, using polling for now
   - [ ] react-native-chart-kit (charts) - for history screen
@@ -197,15 +213,16 @@
 - [x] Implement `getStatus()` function
 - [x] Implement `getStats()` function
 - [x] Add error handling and retry logic
+- [x] Implement `healthCheck()` function
 - [ ] Test API calls with real backend (after backend deployment)
 
-### 3.3 Real-time Updates (Using polling for now)
+### 3.3 Real-time Updates (Using polling)
 - [ ] Create `services/websocket.ts` (optional - WebSocket)
 - [ ] Set up Socket.IO client connection (optional)
 - [ ] Implement event listeners for `sensor-update` (optional)
 - [ ] Handle connection errors and reconnection (optional)
 - [ ] Create custom React hook `useWebSocket()` (optional)
-- [x] **Alternative:** Using 5-second polling in dashboard (works well for now)
+- [x] **Implemented:** Configurable polling (3s/5s/10s/30s) with AsyncStorage persistence
 - [ ] Test real-time updates with backend
 
 ### 3.4 State Management
@@ -219,14 +236,15 @@
 
 ### 3.5 Reusable Components
 - [x] Create `components/SensorCard.tsx`
-  - [x] Props: label, value, unit, icon, status
+  - [x] Props: label, value, unit, icon (ReactNode), status, compact
   - [x] Conditional styling based on status (normal/warning/critical)
+  - [x] Uses Ionicons/MaterialCommunityIcons (no emojis)
 - [x] Create `components/StatusBadge.tsx`
   - [x] Display system state (Idle/Refilling/Distilling/Sleep/Fault)
-  - [x] Color-coded badge with icons
+  - [x] Color-coded badge with Ionicons
 - [x] Create `components/BatteryIndicator.tsx`
   - [x] Visual battery level (0-100%)
-  - [x] Voltage display, percentage, charging indicator
+  - [x] Voltage display, percentage, charging indicator with Ionicons
 - [ ] Create `components/LiveChart.tsx` (for history screen)
   - [ ] Line chart for real-time data
   - [ ] Auto-scrolling X-axis
@@ -240,9 +258,21 @@
 - [x] Show solar charging status
 - [x] Add last update timestamp
 - [x] Add pull-to-refresh functionality
-- [x] **Currently:** Using simulated data (updates every 5 seconds)
-- [ ] Connect to real backend API
+- [x] Connect to real backend API (`walrusAPI.getLatest()`)
+- [x] Show connection status indicator (green/red dot)
+- [x] Display error states (server unreachable, no data)
+- [x] Show live refresh rate in info banner
 - [ ] Test with live data from ESP32
+
+#### Settings Screen (`app/(tabs)/explore.tsx`)
+- [x] Display refresh rate selector (3s, 5s, 10s, 30s)
+- [x] Persist refresh rate via AsyncStorage
+- [x] Show app version info
+- [x] Show device ID info
+- [ ] Display device connection status (live)
+- [ ] Show backend URL (for debugging)
+- [ ] Allow threshold configuration (optional)
+- [ ] Add dark mode toggle (optional)
 
 #### Monitor Screen (`app/(tabs)/monitor.tsx`) - Not started
 - [ ] Create real-time data display
@@ -271,13 +301,6 @@
   - [ ] System fault alerts
 - [ ] Add notification icon with badge count
 - [ ] Mark alerts as read functionality (optional)
-
-#### Settings Screen (optional)
-- [ ] Display device connection status
-- [ ] Show backend URL (for debugging)
-- [ ] Add app version info
-- [ ] Allow threshold configuration (optional)
-- [ ] Add dark mode toggle (optional)
 
 ### 3.7 Mobile Testing
 - [ ] Test on iOS simulator/device
@@ -431,11 +454,12 @@
 
 ## Progress Tracking
 
-**Overall Progress: 0/150+ tasks**
+**Overall Progress: 67/146+ tasks**
 
-- [ ] Phase 1: Backend Server (0/32 tasks)
+- [x] Pre-Implementation: 9/9 tasks ✅
+- [/] Phase 1: Backend Server (28/32 tasks)
 - [ ] Phase 2: ESP32 Integration (0/14 tasks)
-- [ ] Phase 3: Mobile App (0/52 tasks)
+- [/] Phase 3: Mobile App (30/52 tasks)
 - [ ] Phase 4: Backend Deployment (0/15 tasks)
 - [ ] Phase 5: Mobile Deployment (0/9 tasks)
 - [ ] Phase 6: Testing & Documentation (0/15 tasks)
@@ -444,6 +468,10 @@
 
 ## Notes & Reminders
 
+- **Server start:** `cd server && python main.py`
+- **Start simulation:** `curl -X POST http://localhost:8000/api/simulation/start`
+- **Stop simulation:** `curl -X POST http://localhost:8000/api/simulation/stop`
+- **API docs:** `http://localhost:8000/docs` (Swagger UI)
 - Backend URL format: `https://your-app-name.railway.app` or `https://your-app.onrender.com`
 - API Key should be stored in `.env` (never commit to git!)
 - Test frequently - don't wait until the end
