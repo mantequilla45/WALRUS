@@ -8,14 +8,12 @@ import os
 
 # Ensure the server root is in the Python path so that
 # imports like 'from config.supabase import ...' work correctly
-# in Vercel's serverless environment
 server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if server_root not in sys.path:
     sys.path.insert(0, server_root)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 
 # Import routers
 from api.esp32 import router as esp32_router
@@ -67,7 +65,3 @@ async def api_root():
             "mobile_stats": "/api/mobile/stats"
         }
     }
-
-
-# Mangum handler for Vercel
-handler = Mangum(app)
