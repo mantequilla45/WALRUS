@@ -3,10 +3,13 @@ ESP32 API Routes
 Endpoints for receiving data from ESP32 devices
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from models.sensor_reading import ESP32DataPayload, SensorReadingResponse
 from services.data_service import DataService
 from middleware.auth import verify_esp32_api_key
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
 data_service = DataService()
@@ -52,8 +55,17 @@ async def receive_sensor_data(
     ```
     """
     try:
+        logger.info(f"[ESP32] Data from {payload.device_id} | "
+                     f"basin={payload.sensors.basin_temp}°C "
+                     f"tds={payload.sensors.tds_ppm}ppm "
+                     f"level={payload.sensors.water_level_cm}cm "
+                     f"pump={payload.actuators.pump_active if payload.actuators else 'N/A'} "
+                     f"state={payload.state}")
+
         # Store data in database
         stored_reading = await data_service.store_sensor_data(payload)
+
+        logger.info(f"[ESP32] Stored reading id={stored_reading.id}")
 
         return SensorReadingResponse(
             success=True,
@@ -62,6 +74,7 @@ async def receive_sensor_data(
         )
 
     except Exception as e:
+        logger.error(f"[ESP32] Failed to store data: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to store sensor data: {str(e)}"
