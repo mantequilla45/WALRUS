@@ -46,14 +46,18 @@ export const walrusAPI = {
         query = query.eq('device_id', deviceId);
       }
 
+      console.log('[API] getLatest: querying sensor_readings...');
       const { data, error } = await query.single();
 
       if (error) {
+        console.error('[API] getLatest error:', error.message, error.code, error.details);
         return { success: false, data: null, message: error.message };
       }
 
+      console.log('[API] getLatest success:', data?.id, data?.created_at);
       return { success: true, data };
     } catch (e: any) {
+      console.error('[API] getLatest exception:', e.message, e);
       return { success: false, data: null, message: e.message || 'Failed to fetch data' };
     }
   },
