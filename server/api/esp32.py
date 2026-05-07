@@ -31,19 +31,21 @@ async def receive_sensor_data(
         "device_id": "WALRUS_001",
         "sensors": {
             "basin_temp": 52.3,
-            "condenser_temp": 28.5,
             "tds_ppm": 245,
-            "water_level_cm": 15.2,
-            "battery_voltage": 12.4,
-            "solar_current": 1.8
+            "clean_level_cm": 15.2,
+            "float_water_detect": true
         },
         "actuators": {
-            "pump_active": false,
-            "fan_active": true
+            "intake_pump_active": false,
+            "collect_pump_active": false,
+            "mist_active": true
         },
         "state": "Distilling"
     }
     ```
+
+    **Response**: includes a `command` field telling the ESP32 the desired state
+    when the user has switched to manual mode.
 
     **Response**:
     ```json
@@ -58,19 +60,29 @@ async def receive_sensor_data(
         logger.info(f"[ESP32] Data from {payload.device_id} | "
                      f"basin={payload.sensors.basin_temp}°C "
                      f"tds={payload.sensors.tds_ppm}ppm "
-                     f"level={payload.sensors.water_level_cm}cm "
-                     f"pump={payload.actuators.pump_active if payload.actuators else 'N/A'} "
+                     f"clean_level={payload.sensors.clean_level_cm}cm "
+                     f"float={payload.sensors.float_water_detect} "
                      f"state={payload.state}")
 
         # Store data in database
         stored_reading = await data_service.store_sensor_data(payload)
 
-        logger.info(f"[ESP32] Stored reading id={stored_reading.id}")
+        # Look up desired state for this device (mobile writes to device_state table)
+        command = await data_service.get_device_command(payload.device_id)
+
+        logger.info(
+            f"[ESP32] Stored reading id={stored_reading.id} "
+            f"| cmd mode={command.mode} "
+            f"intake={command.desired_intake_pump} "
+            f"collect={command.desired_collect_pump} "
+            f"mist={command.desired_mist}"
+        )
 
         return SensorReadingResponse(
             success=True,
             data=stored_reading,
-            message="Data stored successfully"
+            message="Data stored successfully",
+            command=command,
         )
 
     except Exception as e:

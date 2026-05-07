@@ -7,7 +7,6 @@ This is a development tool — will be replaced by real ESP32 data in production
 import asyncio
 import random
 import math
-from datetime import datetime
 from typing import Optional
 from config.supabase import get_supabase_admin
 
@@ -26,14 +25,13 @@ class SimulationService:
         # Internal state for smooth transitions
         self._tick = 0
         self._basin_temp = 50.0
-        self._condenser_temp = 30.0
         self._tds_ppm = 250
-        self._water_level = 15.0
-        self._battery_voltage = 12.6
-        self._solar_current = 1.5
-        self._system_state = "Distilling"
-        self._pump_active = False
-        self._fan_active = True
+        self._clean_level = 5.0          # cm of clean water collected
+        self._state = "Monitoring"
+        self._intake_pump = False
+        self._collect_pump = False
+        self._mist = False
+        self._float_water_detect = True
 
     @property
     def is_running(self) -> bool:
@@ -83,63 +81,59 @@ class SimulationService:
         """Generate a single realistic sensor reading with smooth drift."""
         t = self._tick
 
-        # Simulate a day cycle (basin heats up during "day", cools at "night")
-        day_factor = (math.sin(t * 0.05) + 1) / 2  # 0..1 sinusoidal
+        # Day cycle (basin heats up during "day", cools at "night")
+        day_factor = (math.sin(t * 0.05) + 1) / 2  # 0..1
 
-        # Basin temp: drifts 40-60°C following day cycle
-        target_basin = 42 + day_factor * 16
+        # Basin temp drifts 35-60 °C following day cycle; mist active accelerates evaporation
+        target_basin = 38 + day_factor * 18
         self._basin_temp += (target_basin - self._basin_temp) * 0.15 + random.uniform(-0.3, 0.3)
-        self._basin_temp = max(35.0, min(65.0, self._basin_temp))
+        self._basin_temp = max(28.0, min(65.0, self._basin_temp))
 
-        # Condenser temp: loosely follows basin but much lower
-        target_condenser = 24 + day_factor * 6
-        self._condenser_temp += (target_condenser - self._condenser_temp) * 0.1 + random.uniform(-0.2, 0.2)
-        self._condenser_temp = max(20.0, min(45.0, self._condenser_temp))
+        # TDS drifts slowly
+        self._tds_ppm += random.randint(-3, 3)
+        self._tds_ppm = max(0, min(400, self._tds_ppm))
 
-        # TDS: generally stable with occasional drift
-        self._tds_ppm += random.randint(-5, 5)
-        self._tds_ppm = max(100, min(600, self._tds_ppm))
+        # Clean water level: rises while distilling (mist on), drops when collect pump runs
+        if self._mist:
+            self._clean_level += random.uniform(0.02, 0.08)
+        if self._collect_pump:
+            self._clean_level -= random.uniform(0.4, 0.8)
+        self._clean_level = max(0.0, min(50.0, self._clean_level))
 
-        # Water level: slowly drops when distilling, refills periodically
-        if self._system_state == "Distilling":
-            self._water_level -= random.uniform(0.05, 0.15)
-        elif self._system_state == "Refilling":
-            self._water_level += random.uniform(0.3, 0.6)
+        # Simple state machine
+        if self._clean_level >= 40.0:
+            self._state = "Collecting"
+            self._collect_pump = True
+            self._mist = False
+        elif self._clean_level <= 2.0:
+            self._state = "Refilling"
+            self._intake_pump = True
+            self._collect_pump = False
+            self._mist = False
+        elif self._basin_temp > 45 and not self._collect_pump:
+            self._state = "Distilling"
+            self._mist = True
+            self._intake_pump = False
+        else:
+            self._state = "Monitoring"
 
-        if self._water_level < 5.0:
-            self._system_state = "Refilling"
-            self._pump_active = True
-        elif self._water_level > 20.0:
-            self._system_state = "Distilling"
-            self._pump_active = False
-        self._water_level = max(2.0, min(25.0, self._water_level))
+        # Stop intake once basin is full enough
+        if self._intake_pump and self._basin_temp < 35 and t % 10 == 0:
+            self._intake_pump = False
 
-        # Battery: discharges slowly, solar charges during "day"
-        solar_output = day_factor * 2.5 + random.uniform(-0.1, 0.1)
-        self._solar_current = max(0.0, min(4.5, solar_output))
-
-        charge_rate = (self._solar_current - 0.8) * 0.01  # net charge/discharge
-        self._battery_voltage += charge_rate + random.uniform(-0.02, 0.02)
-        self._battery_voltage = max(10.8, min(13.8, self._battery_voltage))
-
-        # Fan: active when basin is hot
-        self._fan_active = self._basin_temp > 48
-
-        # Occasional state changes
-        if random.random() < 0.02:
-            self._system_state = random.choice(["Idle", "Distilling", "Sleep"])
+        # Float switch: usually true (water present), occasionally false during refill
+        self._float_water_detect = self._state != "Refilling" or random.random() > 0.3
 
         return {
             "device_id": self.device_id,
             "basin_temp": round(self._basin_temp, 2),
-            "condenser_temp": round(self._condenser_temp, 2),
             "tds_ppm": self._tds_ppm,
-            "water_level_cm": round(self._water_level, 2),
-            "battery_voltage": round(self._battery_voltage, 2),
-            "solar_current": round(self._solar_current, 2),
-            "system_state": self._system_state,
-            "pump_active": self._pump_active,
-            "fan_active": self._fan_active,
+            "clean_level_cm": round(self._clean_level, 2),
+            "intake_pump_active": self._intake_pump,
+            "collect_pump_active": self._collect_pump,
+            "mist_active": self._mist,
+            "float_water_detect": self._float_water_detect,
+            "state": self._state,
         }
 
 

@@ -11,14 +11,13 @@ export interface SensorReading {
   created_at: string;
   device_id: string;
   basin_temp: number | null;
-  condenser_temp: number | null;
   tds_ppm: number | null;
-  water_level_cm: number | null;
-  battery_voltage: number | null;
-  solar_current: number | null;
-  system_state: string | null;
-  pump_active: boolean | null;
-  fan_active: boolean | null;
+  clean_level_cm: number | null;
+  intake_pump_active: boolean | null;
+  collect_pump_active: boolean | null;
+  mist_active: boolean | null;
+  float_water_detect: boolean | null;
+  state: string | null;
 }
 
 export interface LatestDataResponse {
@@ -26,6 +25,19 @@ export interface LatestDataResponse {
   data: SensorReading | null;
   message?: string;
 }
+
+export type DeviceMode = 'auto' | 'manual';
+
+export interface DeviceState {
+  device_id: string;
+  mode: DeviceMode;
+  desired_intake_pump: boolean;
+  desired_collect_pump: boolean;
+  desired_mist: boolean;
+  updated_at: string;
+}
+
+const DEFAULT_DEVICE_ID = 'WALRUS_001';
 
 /**
  * WALRUS API Client — Direct Supabase Queries
@@ -47,14 +59,19 @@ export const walrusAPI = {
       }
 
       console.log('[API] getLatest: querying sensor_readings...');
-      const { data, error } = await query.single();
+      const { data, error } = await query.maybeSingle();
 
       if (error) {
         console.error('[API] getLatest error:', error.message, error.code, error.details);
         return { success: false, data: null, message: error.message };
       }
 
-      console.log('[API] getLatest success:', data?.id, data?.created_at);
+      if (!data) {
+        console.log('[API] getLatest: no readings yet');
+        return { success: true, data: null, message: 'Waiting for first reading' };
+      }
+
+      console.log('[API] getLatest success:', data.id, data.created_at);
       return { success: true, data };
     } catch (e: any) {
       console.error('[API] getLatest exception:', e.message, e);
@@ -125,6 +142,71 @@ export const walrusAPI = {
       .subscribe();
 
     // Return unsubscribe function
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  /**
+   * Read the current desired state for a device. Returns null if no row yet.
+   */
+  getDeviceState: async (deviceId: string = DEFAULT_DEVICE_ID): Promise<DeviceState | null> => {
+    const { data, error } = await supabase
+      .from('device_state')
+      .select('*')
+      .eq('device_id', deviceId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[API] getDeviceState error:', error.message);
+      return null;
+    }
+    return (data as DeviceState) ?? null;
+  },
+
+  /**
+   * Update (or create) desired state for a device. Returns the new row, or null on failure.
+   */
+  setDeviceState: async (
+    patch: Partial<Pick<DeviceState, 'mode' | 'desired_intake_pump' | 'desired_collect_pump' | 'desired_mist'>>,
+    deviceId: string = DEFAULT_DEVICE_ID
+  ): Promise<DeviceState | null> => {
+    const { data, error } = await supabase
+      .from('device_state')
+      .upsert({ device_id: deviceId, ...patch }, { onConflict: 'device_id' })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[API] setDeviceState error:', error.message);
+      return null;
+    }
+    return data as DeviceState;
+  },
+
+  /**
+   * Subscribe to realtime changes on the device_state row (mode + desired_*).
+   */
+  subscribeToDeviceState: (
+    callback: (state: DeviceState) => void,
+    deviceId: string = DEFAULT_DEVICE_ID
+  ) => {
+    const channel = supabase
+      .channel(`device_state_${deviceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'device_state',
+          filter: `device_id=eq.${deviceId}`,
+        },
+        (payload) => {
+          if (payload.new) callback(payload.new as DeviceState);
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };

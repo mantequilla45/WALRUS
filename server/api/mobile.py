@@ -29,14 +29,13 @@ async def get_latest_reading(device_id: Optional[str] = Query(None)):
             "created_at": "2025-02-11T12:00:00Z",
             "device_id": "WALRUS_001",
             "basin_temp": 52.3,
-            "condenser_temp": 28.5,
             "tds_ppm": 245,
-            "water_level_cm": 15.2,
-            "battery_voltage": 12.4,
-            "solar_current": 1.8,
-            "system_state": "Distilling",
-            "pump_active": false,
-            "fan_active": true
+            "clean_level_cm": 15.2,
+            "intake_pump_active": false,
+            "collect_pump_active": false,
+            "mist_active": true,
+            "float_water_detect": true,
+            "state": "Distilling"
         }
     }
     ```
@@ -115,8 +114,7 @@ async def get_system_status(device_id: Optional[str] = Query(None)):
     {
         "status": "online",
         "last_seen": "2025-02-11T12:00:00Z",
-        "system_state": "Distilling",
-        "battery_voltage": 12.4,
+        "state": "Distilling",
         "warnings": [],
         "device_id": "WALRUS_001"
     }

@@ -11,17 +11,16 @@ from datetime import datetime
 class SensorData(BaseModel):
     """Sensor readings from ESP32"""
     basin_temp: Optional[float] = Field(None, description="Basin temperature in Celsius")
-    condenser_temp: Optional[float] = Field(None, description="Condenser temperature in Celsius")
     tds_ppm: Optional[int] = Field(None, description="Total Dissolved Solids in PPM")
-    water_level_cm: Optional[float] = Field(None, description="Water level in centimeters")
-    battery_voltage: Optional[float] = Field(None, description="Battery voltage")
-    solar_current: Optional[float] = Field(None, description="Solar panel current in amps")
+    clean_level_cm: Optional[float] = Field(None, description="Clean water collection level in centimeters")
+    float_water_detect: Optional[bool] = Field(None, description="Float switch — water present")
 
 
 class ActuatorData(BaseModel):
     """Actuator states from ESP32"""
-    pump_active: Optional[bool] = Field(None, description="Pump on/off state")
-    fan_active: Optional[bool] = Field(None, description="Fan on/off state")
+    intake_pump_active: Optional[bool] = Field(None, description="Intake pump on/off state")
+    collect_pump_active: Optional[bool] = Field(None, description="Collection pump on/off state")
+    mist_active: Optional[bool] = Field(None, description="Ultrasonic mister on/off state")
 
 
 class ESP32DataPayload(BaseModel):
@@ -29,7 +28,7 @@ class ESP32DataPayload(BaseModel):
     device_id: str = Field(..., description="Unique device identifier")
     sensors: SensorData
     actuators: Optional[ActuatorData] = None
-    state: Optional[str] = Field(None, description="System state: Idle, Refilling, Distilling")
+    state: Optional[str] = Field(None, description="System state, e.g. Monitoring, Distilling, Idle")
     timestamp: Optional[int] = Field(None, description="Unix timestamp")
 
 
@@ -39,14 +38,21 @@ class SensorReading(BaseModel):
     created_at: Optional[datetime] = None
     device_id: str
     basin_temp: Optional[float] = None
-    condenser_temp: Optional[float] = None
     tds_ppm: Optional[int] = None
-    water_level_cm: Optional[float] = None
-    battery_voltage: Optional[float] = None
-    solar_current: Optional[float] = None
-    system_state: Optional[str] = None
-    pump_active: Optional[bool] = None
-    fan_active: Optional[bool] = None
+    clean_level_cm: Optional[float] = None
+    intake_pump_active: Optional[bool] = None
+    collect_pump_active: Optional[bool] = None
+    mist_active: Optional[bool] = None
+    float_water_detect: Optional[bool] = None
+    state: Optional[str] = None
+
+
+class DeviceCommand(BaseModel):
+    """Desired device state returned to the ESP32 in the POST /api/esp32/data response."""
+    mode: str = Field("auto", description="'auto' (ESP32 self-decides) or 'manual' (obey desired_*)")
+    desired_intake_pump: bool = False
+    desired_collect_pump: bool = False
+    desired_mist: bool = False
 
 
 class SensorReadingResponse(BaseModel):
@@ -54,6 +60,7 @@ class SensorReadingResponse(BaseModel):
     success: bool
     data: Optional[SensorReading] = None
     message: Optional[str] = None
+    command: Optional[DeviceCommand] = None
 
 
 class HistoricalDataResponse(BaseModel):

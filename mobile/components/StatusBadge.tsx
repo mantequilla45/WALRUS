@@ -2,7 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface StatusBadgeProps {
-  status: 'Idle' | 'Refilling' | 'Distilling' | 'Sleep' | 'Fault';
+  status: string;
   connected?: boolean;
 }
 
@@ -11,8 +11,10 @@ const CONFIG: Record<string, {
   icon: keyof typeof Ionicons.glyphMap;
 }> = {
   Idle: { color: '#8E8E93', icon: 'pause-circle' },
+  Monitoring: { color: '#5AC8FA', icon: 'eye' },
   Refilling: { color: '#007AFF', icon: 'water' },
   Distilling: { color: '#34C759', icon: 'flame' },
+  Collecting: { color: '#34C759', icon: 'archive' },
   Sleep: { color: '#8E8E93', icon: 'moon' },
   Fault: { color: '#FF3B30', icon: 'alert-circle' },
 };

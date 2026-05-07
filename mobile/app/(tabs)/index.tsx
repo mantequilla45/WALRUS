@@ -1,49 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import LottieView from 'lottie-react-native';
-import { SensorCard } from '@/components/SensorCard';
 import { StatusBadge } from '@/components/StatusBadge';
-import { BatteryIndicator } from '@/components/BatteryIndicator';
-import { walrusAPI, type SensorReading } from '@/services/api';
+import { walrusAPI, type SensorReading, type DeviceState, type DeviceMode } from '@/services/api';
+
+type DesiredKey = 'desired_intake_pump' | 'desired_collect_pump' | 'desired_mist';
 
 export default function HomeScreen() {
   const [data, setData] = useState<SensorReading | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deviceState, setDeviceState] = useState<DeviceState | null>(null);
 
-  // Fan spin animation
-  const fanSpin = useRef(new Animated.Value(0)).current;
+  // Mist pulse animation (active when mist_active is true)
+  const mistPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (data?.fan_active) {
+    if (data?.mist_active) {
       const anim = Animated.loop(
-        Animated.timing(fanSpin, { toValue: 1, duration: 1000, easing: Easing.linear, useNativeDriver: true })
+        Animated.sequence([
+          Animated.timing(mistPulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(mistPulse, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ])
       );
       anim.start();
       return () => anim.stop();
     } else {
-      fanSpin.setValue(0);
+      mistPulse.setValue(0);
     }
-  }, [data?.fan_active]);
-  const fanRotate = fanSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-
-  // Solar spin animation
-  const solarSpin = useRef(new Animated.Value(0)).current;
-  const solarHigh = (data?.solar_current ?? 0) > 1.0;
-  useEffect(() => {
-    if (solarHigh) {
-      const anim = Animated.loop(
-        Animated.timing(solarSpin, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true })
-      );
-      anim.start();
-      return () => anim.stop();
-    } else {
-      solarSpin.setValue(0);
-    }
-  }, [solarHigh]);
-  const solarRotate = solarSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  }, [data?.mist_active]);
+  const mistScale = mistPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
 
   const fetchData = useCallback(async () => {
     try {
@@ -51,45 +37,52 @@ export default function HomeScreen() {
       if (response.success && response.data) {
         setData(response.data);
         setLastUpdate(new Date(response.data.created_at));
-        setConnected(true);
         setError(null);
       } else {
-        setError(response.message || 'No data available');
-        setConnected(false);
+        setError(response.message || 'Waiting for first reading');
       }
     } catch (e: any) {
       setError('Cannot connect to database');
-      setConnected(false);
     }
   }, []);
 
   useEffect(() => {
     fetchData();
-    const unsubscribe = walrusAPI.subscribeToReadings((reading) => {
+    walrusAPI.getDeviceState().then((s) => s && setDeviceState(s));
+
+    const unsubscribeReadings = walrusAPI.subscribeToReadings((reading) => {
       setData(reading);
       setLastUpdate(new Date(reading.created_at));
-      setConnected(true);
       setError(null);
     });
-    return () => unsubscribe();
+    const unsubscribeState = walrusAPI.subscribeToDeviceState((s) => setDeviceState(s));
+
+    return () => {
+      unsubscribeReadings();
+      unsubscribeState();
+    };
   }, [fetchData]);
+
+  const isManual = deviceState?.mode === 'manual';
+
+  const setMode = async (mode: DeviceMode) => {
+    setDeviceState((prev) => (prev ? { ...prev, mode } : prev));
+    const next = await walrusAPI.setDeviceState({ mode });
+    if (next) setDeviceState(next);
+  };
+
+  const toggleDesired = async (key: DesiredKey) => {
+    if (!isManual) return;
+    const current = deviceState?.[key] ?? false;
+    setDeviceState((prev) => (prev ? { ...prev, [key]: !current } : prev));
+    const next = await walrusAPI.setDeviceState({ [key]: !current } as Partial<DeviceState>);
+    if (next) setDeviceState(next);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
-  };
-
-  const getTDSStatus = (ppm: number) => {
-    if (ppm < 300) return 'normal' as const;
-    if (ppm < 500) return 'warning' as const;
-    return 'critical' as const;
-  };
-
-  const getTempStatus = (temp: number) => {
-    if (temp < 50) return 'normal' as const;
-    if (temp < 55) return 'warning' as const;
-    return 'critical' as const;
   };
 
   const getTimeAgo = () => {
@@ -101,7 +94,7 @@ export default function HomeScreen() {
     return lastUpdate.toLocaleTimeString();
   };
 
-  // Loading / Error state
+  // Loading / waiting-for-first-reading state
   if (!data) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -119,6 +112,11 @@ export default function HomeScreen() {
     );
   }
 
+  const tds = data.tds_ppm ?? 0;
+  const cleanLevel = data.clean_level_cm ?? 0;
+  const basin = data.basin_temp ?? 0;
+  const floatOk = data.float_water_detect === true;
+
   return (
     <ScrollView
       style={styles.container}
@@ -132,49 +130,10 @@ export default function HomeScreen() {
         <View>
           <Text style={styles.greeting}>Dashboard</Text>
         </View>
-        <StatusBadge status={(data.system_state as any) || 'Idle'} />
+        <StatusBadge status={(data.state as any) || 'Idle'} />
       </View>
 
-      {/* ── Updated timestamp ── */}
       <Text style={styles.timestamp}>Updated {getTimeAgo()}</Text>
-
-      {/* ── Power ── */}
-      <Text style={styles.sectionLabel}>Power</Text>
-      <View style={styles.row}>
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={styles.lottieWrap}>
-              <LottieView
-                source={require('@/assets/icons/animated/wired-outline-2765-battery-levels-vertical-hover-pinch.json')}
-                autoPlay={(data.solar_current ?? 0) > 0.5}
-                loop={(data.solar_current ?? 0) > 0.5}
-                speed={0.8}
-                style={{ width: 28, height: 28, transform: [{ rotate: '90deg' }] }}
-              />
-            </View>
-            <Text style={styles.metricLabel}>Battery</Text>
-          </View>
-          <Text style={styles.metricValue}>{(data.battery_voltage ?? 0).toFixed(1)}V</Text>
-          <Text style={styles.metricSub}>
-            {Math.round(Math.min(100, Math.max(0, (((data.battery_voltage ?? 0) - 11) / 1.6) * 100)))}% charged
-          </Text>
-        </View>
-
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: '#E8F8ED' }]}>
-              <Animated.View style={solarHigh ? { transform: [{ rotate: solarRotate }] } : undefined}>
-                <Ionicons name="sunny" size={16} color="#34C759" />
-              </Animated.View>
-            </View>
-            <Text style={styles.metricLabel}>Solar</Text>
-          </View>
-          <Text style={styles.metricValue}>{(data.solar_current ?? 0).toFixed(2)}A</Text>
-          <Text style={[styles.metricSub, (data.solar_current ?? 0) > 1 ? styles.subPositive : styles.subWarning]}>
-            {(data.solar_current ?? 0) > 1 ? 'Generating' : 'Low output'}
-          </Text>
-        </View>
-      </View>
 
       {/* ── Water Quality ── */}
       <Text style={styles.sectionLabel}>Water Quality</Text>
@@ -186,12 +145,12 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.metricLabel}>Purity (TDS)</Text>
           </View>
-          <Text style={styles.metricValue}>{data.tds_ppm ?? 0}</Text>
+          <Text style={styles.metricValue}>{tds}</Text>
           <Text style={[
             styles.metricSub,
-            (data.tds_ppm ?? 0) < 300 ? styles.subPositive : styles.subWarning
+            tds < 300 ? styles.subPositive : styles.subWarning,
           ]}>
-            {(data.tds_ppm ?? 0) < 300 ? 'Clean' : (data.tds_ppm ?? 0) < 500 ? 'Moderate' : 'Poor'} · ppm
+            {tds < 300 ? 'Clean' : tds < 500 ? 'Moderate' : 'Poor'} · ppm
           </Text>
         </View>
 
@@ -200,95 +159,177 @@ export default function HomeScreen() {
             <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
               <Ionicons name="water-outline" size={16} color="#5AC8FA" />
             </View>
-            <Text style={styles.metricLabel}>Water Level</Text>
+            <Text style={styles.metricLabel}>Clean Level</Text>
           </View>
-          <Text style={styles.metricValue}>{(data.water_level_cm ?? 0).toFixed(1)}</Text>
+          <Text style={styles.metricValue}>{cleanLevel.toFixed(1)}</Text>
           <Text style={[
             styles.metricSub,
-            (data.water_level_cm ?? 0) > 10 ? styles.subPositive : styles.subWarning
+            cleanLevel > 5 ? styles.subPositive : styles.subWarning,
           ]}>
-            {(data.water_level_cm ?? 0) > 10 ? 'Normal' : 'Low'} · cm
+            {cleanLevel > 5 ? 'Collected' : 'Low'} · cm
           </Text>
         </View>
       </View>
 
-      {/* ── Temperature ── */}
-      <Text style={styles.sectionLabel}>Temperature</Text>
+      {/* ── Sensors ── */}
+      <Text style={styles.sectionLabel}>Sensors</Text>
       <View style={styles.row}>
         <View style={styles.metricCard}>
           <View style={styles.metricHeader}>
             <View style={[styles.metricIcon, { backgroundColor: '#FFF3E0' }]}>
               <Ionicons name="flame" size={16} color="#FF9500" />
             </View>
-            <Text style={styles.metricLabel}>Basin</Text>
+            <Text style={styles.metricLabel}>Basin Temp</Text>
           </View>
-          <Text style={styles.metricValue}>{(data.basin_temp ?? 0).toFixed(1)}°</Text>
+          <Text style={styles.metricValue}>{basin.toFixed(1)}°</Text>
           <Text style={[
             styles.metricSub,
-            (data.basin_temp ?? 0) < 50 ? styles.subPositive : styles.subWarning
+            basin < 50 ? styles.subPositive : styles.subWarning,
           ]}>
-            {(data.basin_temp ?? 0) < 50 ? 'Normal' : (data.basin_temp ?? 0) < 55 ? 'Warm' : 'Hot'} · °C
+            {basin < 50 ? 'Normal' : basin < 55 ? 'Warm' : 'Hot'} · °C
           </Text>
         </View>
 
         <View style={styles.metricCard}>
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
-              <Ionicons name="snow" size={16} color="#5AC8FA" />
+            <View style={[styles.metricIcon, { backgroundColor: floatOk ? '#E8F8ED' : '#FFEBEB' }]}>
+              <MaterialCommunityIcons
+                name={floatOk ? 'water' : 'water-off'}
+                size={16}
+                color={floatOk ? '#34C759' : '#FF3B30'}
+              />
             </View>
-            <Text style={styles.metricLabel}>Condenser</Text>
+            <Text style={styles.metricLabel}>Float Switch</Text>
           </View>
-          <Text style={styles.metricValue}>{(data.condenser_temp ?? 0).toFixed(1)}°</Text>
-          <Text style={[styles.metricSub, styles.subPositive]}>Normal · °C</Text>
+          <Text style={[styles.metricValue, !floatOk && styles.valueOff]}>
+            {floatOk ? 'OK' : 'DRY'}
+          </Text>
+          <Text style={[styles.metricSub, floatOk ? styles.subPositive : styles.subWarning]}>
+            {floatOk ? 'Water detected' : 'No water'}
+          </Text>
         </View>
       </View>
 
-      {/* ── Actuators ── */}
-      <Text style={styles.sectionLabel}>Actuators</Text>
-      <View style={styles.row}>
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: data.pump_active ? '#EBF5FF' : '#F2F2F7' }]}>
-              <MaterialCommunityIcons
-                name="water-pump"
-                size={16}
-                color={data.pump_active ? '#007AFF' : '#C7C7CC'}
-              />
-            </View>
-            <Text style={styles.metricLabel}>Pump</Text>
-          </View>
-          <Text style={[styles.metricValue, !data.pump_active && styles.valueOff]}>
-            {data.pump_active ? 'ON' : 'OFF'}
-          </Text>
-          <Text style={[styles.metricSub, data.pump_active ? styles.subPositive : {}]}>
-            {data.pump_active ? 'Active' : 'Idle'}
-          </Text>
+      {/* ── Controls ── */}
+      <View style={styles.controlsHeader}>
+        <Text style={styles.sectionLabel}>Controls</Text>
+        <View style={styles.modeToggle}>
+          <Pressable
+            onPress={() => setMode('auto')}
+            style={[styles.modePill, !isManual && styles.modePillActive]}
+          >
+            <Text style={[styles.modePillText, !isManual && styles.modePillTextActive]}>Auto</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setMode('manual')}
+            style={[styles.modePill, isManual && styles.modePillActiveManual]}
+          >
+            <Text style={[styles.modePillText, isManual && styles.modePillTextManual]}>Manual</Text>
+          </Pressable>
         </View>
+      </View>
+      {isManual && (
+        <Text style={styles.manualHint}>
+          Manual mode — actuators obey your taps. Device may take a few seconds to respond.
+        </Text>
+      )}
 
-        <View style={styles.metricCard}>
+      {/* Pumps row */}
+      <View style={styles.row}>
+        <ActuatorCard
+          label="Intake Pump"
+          icon="water-pump"
+          active={!!data.intake_pump_active}
+          desired={!!deviceState?.desired_intake_pump}
+          isManual={isManual}
+          onPress={() => toggleDesired('desired_intake_pump')}
+        />
+        <ActuatorCard
+          label="Collect Pump"
+          icon="water-pump-off"
+          active={!!data.collect_pump_active}
+          desired={!!deviceState?.desired_collect_pump}
+          isManual={isManual}
+          onPress={() => toggleDesired('desired_collect_pump')}
+        />
+      </View>
+
+      {/* Mist row (full width) */}
+      <View style={styles.row}>
+        <Pressable
+          disabled={!isManual}
+          onPress={() => toggleDesired('desired_mist')}
+          style={({ pressed }) => [
+            styles.metricCard,
+            { flex: 1 },
+            isManual && styles.metricCardManual,
+            pressed && isManual && styles.metricCardPressed,
+          ]}
+        >
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: data.fan_active ? '#EBF5FF' : '#F2F2F7' }]}>
-              <Animated.View style={data.fan_active ? { transform: [{ rotate: fanRotate }] } : undefined}>
+            <View style={[styles.metricIcon, { backgroundColor: data.mist_active ? '#EBF5FF' : '#F2F2F7' }]}>
+              <Animated.View style={data.mist_active ? { transform: [{ scale: mistScale }] } : undefined}>
                 <MaterialCommunityIcons
-                  name="fan"
+                  name="weather-fog"
                   size={16}
-                  color={data.fan_active ? '#007AFF' : '#C7C7CC'}
+                  color={data.mist_active ? '#007AFF' : '#C7C7CC'}
                 />
               </Animated.View>
             </View>
-            <Text style={styles.metricLabel}>Fan</Text>
+            <Text style={styles.metricLabel}>Mister</Text>
           </View>
-          <Text style={[styles.metricValue, !data.fan_active && styles.valueOff]}>
-            {data.fan_active ? 'ON' : 'OFF'}
+          <Text style={[styles.metricValue, !data.mist_active && styles.valueOff]}>
+            {data.mist_active ? 'ON' : 'OFF'}
           </Text>
-          <Text style={[styles.metricSub, data.fan_active ? styles.subPositive : {}]}>
-            {data.fan_active ? 'Active' : 'Idle'}
+          <Text style={[styles.metricSub, data.mist_active ? styles.subPositive : {}]}>
+            {isManual
+              ? `Desired: ${deviceState?.desired_mist ? 'ON' : 'OFF'} · tap to toggle`
+              : data.mist_active ? 'Distilling' : 'Idle'}
           </Text>
-        </View>
+        </Pressable>
       </View>
 
       <View style={{ height: 30 }} />
     </ScrollView>
+  );
+}
+
+function ActuatorCard({
+  label,
+  icon,
+  active,
+  desired,
+  isManual,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  active: boolean;
+  desired: boolean;
+  isManual: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      disabled={!isManual}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.metricCard,
+        isManual && styles.metricCardManual,
+        pressed && isManual && styles.metricCardPressed,
+      ]}
+    >
+      <View style={styles.metricHeader}>
+        <View style={[styles.metricIcon, { backgroundColor: active ? '#EBF5FF' : '#F2F2F7' }]}>
+          <MaterialCommunityIcons name={icon} size={16} color={active ? '#007AFF' : '#C7C7CC'} />
+        </View>
+        <Text style={styles.metricLabel}>{label}</Text>
+      </View>
+      <Text style={[styles.metricValue, !active && styles.valueOff]}>{active ? 'ON' : 'OFF'}</Text>
+      <Text style={[styles.metricSub, active ? styles.subPositive : {}]}>
+        {isManual ? `Desired: ${desired ? 'ON' : 'OFF'} · tap to toggle` : active ? 'Active' : 'Idle'}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -352,11 +393,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1C1C1E',
   },
-  subtitle: {
-    fontSize: 13,
-    color: '#8E8E93',
-    marginTop: 3,
-  },
 
   // ── Timestamp ──
   timestamp: {
@@ -380,9 +416,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     gap: 10,
+    marginBottom: 4,
   },
 
-  // ── Metric Card (Aura style) ──
+  // ── Metric Card ──
   metricCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -406,15 +443,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lottieWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#E8F8ED',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
   },
   metricLabel: {
     fontSize: 13,
@@ -443,5 +471,59 @@ const styles = StyleSheet.create({
   },
   subWarning: {
     color: '#FF9F0A',
+  },
+
+  // ── Controls / Mode toggle ──
+  controlsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 20,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 999,
+    padding: 3,
+  },
+  modePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  modePillActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  modePillActiveManual: {
+    backgroundColor: '#FF9500',
+  },
+  modePillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  modePillTextActive: {
+    color: '#1C1C1E',
+  },
+  modePillTextManual: {
+    color: '#FFFFFF',
+  },
+  manualHint: {
+    fontSize: 12,
+    color: '#FF9500',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  metricCardManual: {
+    borderWidth: 1.5,
+    borderColor: '#FF9500',
+  },
+  metricCardPressed: {
+    opacity: 0.7,
   },
 });

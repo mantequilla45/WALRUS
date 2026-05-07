@@ -6,7 +6,7 @@ Business logic for storing and retrieving sensor data
 from datetime import datetime, timedelta
 from typing import List, Optional
 from config.supabase import get_supabase_admin
-from models.sensor_reading import ESP32DataPayload, SensorReading
+from models.sensor_reading import DeviceCommand, ESP32DataPayload, SensorReading
 
 
 class DataService:
@@ -15,6 +15,26 @@ class DataService:
     def __init__(self):
         self.supabase = get_supabase_admin()
         self.table_name = "sensor_readings"
+        self.device_state_table = "device_state"
+
+    async def get_device_command(self, device_id: str) -> DeviceCommand:
+        """Read the desired state for a device. Returns auto/off defaults if no row exists."""
+        result = (
+            self.supabase.table(self.device_state_table)
+            .select("mode, desired_intake_pump, desired_collect_pump, desired_mist")
+            .eq("device_id", device_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            row = result.data[0]
+            return DeviceCommand(
+                mode=row.get("mode") or "auto",
+                desired_intake_pump=bool(row.get("desired_intake_pump")),
+                desired_collect_pump=bool(row.get("desired_collect_pump")),
+                desired_mist=bool(row.get("desired_mist")),
+            )
+        return DeviceCommand()
 
     async def store_sensor_data(self, payload: ESP32DataPayload) -> SensorReading:
         """
@@ -30,18 +50,17 @@ class DataService:
         data = {
             "device_id": payload.device_id,
             "basin_temp": payload.sensors.basin_temp,
-            "condenser_temp": payload.sensors.condenser_temp,
             "tds_ppm": payload.sensors.tds_ppm,
-            "water_level_cm": payload.sensors.water_level_cm,
-            "battery_voltage": payload.sensors.battery_voltage,
-            "solar_current": payload.sensors.solar_current,
-            "system_state": payload.state,
+            "clean_level_cm": payload.sensors.clean_level_cm,
+            "float_water_detect": payload.sensors.float_water_detect,
+            "state": payload.state,
         }
 
         # Add actuator data if present
         if payload.actuators:
-            data["pump_active"] = payload.actuators.pump_active
-            data["fan_active"] = payload.actuators.fan_active
+            data["intake_pump_active"] = payload.actuators.intake_pump_active
+            data["collect_pump_active"] = payload.actuators.collect_pump_active
+            data["mist_active"] = payload.actuators.mist_active
 
         # Insert into Supabase
         result = self.supabase.table(self.table_name).insert(data).execute()
@@ -138,18 +157,19 @@ class DataService:
 
         # Check for warnings
         warnings = []
-        if latest.battery_voltage and latest.battery_voltage < 11.5:
-            warnings.append("Low battery voltage")
-        if latest.tds_ppm and latest.tds_ppm > 500:
+        if latest.tds_ppm is not None and latest.tds_ppm > 500:
             warnings.append("High TDS - water quality issue")
+        if latest.clean_level_cm is not None and latest.clean_level_cm < 5.0:
+            warnings.append("Clean water level low")
+        if latest.float_water_detect is False:
+            warnings.append("Float switch reports no water")
 
         return {
             "status": "online" if is_online else "offline",
             "last_seen": latest.created_at,
-            "system_state": latest.system_state,
-            "battery_voltage": latest.battery_voltage,
+            "state": latest.state,
             "warnings": warnings,
-            "device_id": latest.device_id
+            "device_id": latest.device_id,
         }
 
     async def get_statistics(
@@ -178,31 +198,20 @@ class DataService:
 
         # Calculate statistics
         temps_basin = [r.basin_temp for r in data if r.basin_temp is not None]
-        temps_condenser = [r.condenser_temp for r in data if r.condenser_temp is not None]
         tds_values = [r.tds_ppm for r in data if r.tds_ppm is not None]
-        battery_values = [r.battery_voltage for r in data if r.battery_voltage is not None]
+        clean_levels = [r.clean_level_cm for r in data if r.clean_level_cm is not None]
+
+        def stats(values):
+            return {
+                "avg": round(sum(values) / len(values), 2) if values else None,
+                "min": min(values) if values else None,
+                "max": max(values) if values else None,
+            }
 
         return {
             "count": len(data),
             "duration": duration,
-            "basin_temp": {
-                "avg": round(sum(temps_basin) / len(temps_basin), 2) if temps_basin else None,
-                "min": min(temps_basin) if temps_basin else None,
-                "max": max(temps_basin) if temps_basin else None,
-            },
-            "condenser_temp": {
-                "avg": round(sum(temps_condenser) / len(temps_condenser), 2) if temps_condenser else None,
-                "min": min(temps_condenser) if temps_condenser else None,
-                "max": max(temps_condenser) if temps_condenser else None,
-            },
-            "tds_ppm": {
-                "avg": round(sum(tds_values) / len(tds_values), 2) if tds_values else None,
-                "min": min(tds_values) if tds_values else None,
-                "max": max(tds_values) if tds_values else None,
-            },
-            "battery_voltage": {
-                "avg": round(sum(battery_values) / len(battery_values), 2) if battery_values else None,
-                "min": min(battery_values) if battery_values else None,
-                "max": max(battery_values) if battery_values else None,
-            }
+            "basin_temp": stats(temps_basin),
+            "tds_ppm": stats(tds_values),
+            "clean_level_cm": stats(clean_levels),
         }
