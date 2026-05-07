@@ -26,14 +26,14 @@ export interface LatestDataResponse {
   message?: string;
 }
 
-export type DeviceMode = 'auto' | 'manual';
+export type Override = 'auto' | 'on' | 'off';
 
-export interface DeviceState {
+export interface DeviceCommands {
   device_id: string;
-  mode: DeviceMode;
-  desired_intake_pump: boolean;
-  desired_collect_pump: boolean;
-  desired_mist: boolean;
+  sleep: boolean;
+  intake_pump_override: Override;
+  collect_pump_override: Override;
+  mist_override: Override;
   updated_at: string;
 }
 
@@ -148,61 +148,63 @@ export const walrusAPI = {
   },
 
   /**
-   * Read the current desired state for a device. Returns null if no row yet.
+   * Read current command overrides for a device. Returns null if no row yet.
    */
-  getDeviceState: async (deviceId: string = DEFAULT_DEVICE_ID): Promise<DeviceState | null> => {
+  getDeviceCommands: async (
+    deviceId: string = DEFAULT_DEVICE_ID
+  ): Promise<DeviceCommands | null> => {
     const { data, error } = await supabase
-      .from('device_state')
+      .from('device_commands')
       .select('*')
       .eq('device_id', deviceId)
       .maybeSingle();
 
     if (error) {
-      console.error('[API] getDeviceState error:', error.message);
+      console.error('[API] getDeviceCommands error:', error.message);
       return null;
     }
-    return (data as DeviceState) ?? null;
+    return (data as DeviceCommands) ?? null;
   },
 
   /**
-   * Update (or create) desired state for a device. Returns the new row, or null on failure.
+   * Update (or create) command overrides for a device.
    */
-  setDeviceState: async (
-    patch: Partial<Pick<DeviceState, 'mode' | 'desired_intake_pump' | 'desired_collect_pump' | 'desired_mist'>>,
+  setDeviceCommands: async (
+    patch: Partial<Pick<DeviceCommands, 'sleep' | 'intake_pump_override' | 'collect_pump_override' | 'mist_override'>>,
     deviceId: string = DEFAULT_DEVICE_ID
-  ): Promise<DeviceState | null> => {
+  ): Promise<DeviceCommands | null> => {
     const { data, error } = await supabase
-      .from('device_state')
+      .from('device_commands')
       .upsert({ device_id: deviceId, ...patch }, { onConflict: 'device_id' })
       .select()
       .single();
 
     if (error) {
-      console.error('[API] setDeviceState error:', error.message);
+      console.error('[API] setDeviceCommands error:', error.message);
       return null;
     }
-    return data as DeviceState;
+    return data as DeviceCommands;
   },
 
   /**
-   * Subscribe to realtime changes on the device_state row (mode + desired_*).
+   * Subscribe to realtime changes on the device_commands row.
    */
-  subscribeToDeviceState: (
-    callback: (state: DeviceState) => void,
+  subscribeToDeviceCommands: (
+    callback: (commands: DeviceCommands) => void,
     deviceId: string = DEFAULT_DEVICE_ID
   ) => {
     const channel = supabase
-      .channel(`device_state_${deviceId}`)
+      .channel(`device_commands_${deviceId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'device_state',
+          table: 'device_commands',
           filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
-          if (payload.new) callback(payload.new as DeviceState);
+          if (payload.new) callback(payload.new as DeviceCommands);
         }
       )
       .subscribe();

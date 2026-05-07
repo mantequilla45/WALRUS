@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable, Switch } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBadge } from '@/components/StatusBadge';
-import { walrusAPI, type SensorReading, type DeviceState, type DeviceMode } from '@/services/api';
+import { walrusAPI, type SensorReading, type DeviceCommands, type Override } from '@/services/api';
 
-type DesiredKey = 'desired_intake_pump' | 'desired_collect_pump' | 'desired_mist';
+type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'mist_override';
 
 export default function HomeScreen() {
   const [data, setData] = useState<SensorReading | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deviceState, setDeviceState] = useState<DeviceState | null>(null);
+  const [commands, setCommands] = useState<DeviceCommands | null>(null);
 
-  // Mist pulse animation (active when mist_active is true)
+  // Mist pulse animation
   const mistPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (data?.mist_active) {
@@ -48,35 +48,46 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchData();
-    walrusAPI.getDeviceState().then((s) => s && setDeviceState(s));
+    walrusAPI.getDeviceCommands().then((c) => c && setCommands(c));
 
     const unsubscribeReadings = walrusAPI.subscribeToReadings((reading) => {
       setData(reading);
       setLastUpdate(new Date(reading.created_at));
       setError(null);
     });
-    const unsubscribeState = walrusAPI.subscribeToDeviceState((s) => setDeviceState(s));
+    const unsubscribeCommands = walrusAPI.subscribeToDeviceCommands((c) => setCommands(c));
 
     return () => {
       unsubscribeReadings();
-      unsubscribeState();
+      unsubscribeCommands();
     };
   }, [fetchData]);
 
-  const isManual = deviceState?.mode === 'manual';
-
-  const setMode = async (mode: DeviceMode) => {
-    setDeviceState((prev) => (prev ? { ...prev, mode } : prev));
-    const next = await walrusAPI.setDeviceState({ mode });
-    if (next) setDeviceState(next);
+  const setOverride = async (key: OverrideKey, value: Override) => {
+    setCommands((prev) => (prev ? { ...prev, [key]: value } : prev));
+    const next = await walrusAPI.setDeviceCommands({ [key]: value } as Partial<DeviceCommands>);
+    if (next) setCommands(next);
   };
 
-  const toggleDesired = async (key: DesiredKey) => {
-    if (!isManual) return;
-    const current = deviceState?.[key] ?? false;
-    setDeviceState((prev) => (prev ? { ...prev, [key]: !current } : prev));
-    const next = await walrusAPI.setDeviceState({ [key]: !current } as Partial<DeviceState>);
-    if (next) setDeviceState(next);
+  const setSleep = async (sleep: boolean) => {
+    setCommands((prev) => (prev ? { ...prev, sleep } : prev));
+    const next = await walrusAPI.setDeviceCommands({ sleep });
+    if (next) setCommands(next);
+  };
+
+  const resetAll = async () => {
+    setCommands((prev) =>
+      prev
+        ? { ...prev, sleep: false, intake_pump_override: 'auto', collect_pump_override: 'auto', mist_override: 'auto' }
+        : prev
+    );
+    const next = await walrusAPI.setDeviceCommands({
+      sleep: false,
+      intake_pump_override: 'auto',
+      collect_pump_override: 'auto',
+      mist_override: 'auto',
+    });
+    if (next) setCommands(next);
   };
 
   const onRefresh = async () => {
@@ -94,7 +105,6 @@ export default function HomeScreen() {
     return lastUpdate.toLocaleTimeString();
   };
 
-  // Loading / waiting-for-first-reading state
   if (!data) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -116,6 +126,11 @@ export default function HomeScreen() {
   const cleanLevel = data.clean_level_cm ?? 0;
   const basin = data.basin_temp ?? 0;
   const floatOk = data.float_water_detect === true;
+  const anyOverride =
+    (commands?.intake_pump_override && commands.intake_pump_override !== 'auto') ||
+    (commands?.collect_pump_override && commands.collect_pump_override !== 'auto') ||
+    (commands?.mist_override && commands.mist_override !== 'auto') ||
+    commands?.sleep;
 
   return (
     <ScrollView
@@ -125,7 +140,6 @@ export default function HomeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" />
       }
     >
-      {/* ── Header ── */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Dashboard</Text>
@@ -210,62 +224,24 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ── Controls ── */}
-      <View style={styles.controlsHeader}>
-        <Text style={styles.sectionLabel}>Controls</Text>
-        <View style={styles.modeToggle}>
-          <Pressable
-            onPress={() => setMode('auto')}
-            style={[styles.modePill, !isManual && styles.modePillActive]}
-          >
-            <Text style={[styles.modePillText, !isManual && styles.modePillTextActive]}>Auto</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setMode('manual')}
-            style={[styles.modePill, isManual && styles.modePillActiveManual]}
-          >
-            <Text style={[styles.modePillText, isManual && styles.modePillTextManual]}>Manual</Text>
-          </Pressable>
-        </View>
-      </View>
-      {isManual && (
-        <Text style={styles.manualHint}>
-          Manual mode — actuators obey your taps. Device may take a few seconds to respond.
-        </Text>
-      )}
-
-      {/* Pumps row */}
+      {/* ── Actuator status ── */}
+      <Text style={styles.sectionLabel}>Actuators</Text>
       <View style={styles.row}>
-        <ActuatorCard
-          label="Intake Pump"
+        <ActuatorStatusCard
+          label="Intake"
           icon="water-pump"
           active={!!data.intake_pump_active}
-          desired={!!deviceState?.desired_intake_pump}
-          isManual={isManual}
-          onPress={() => toggleDesired('desired_intake_pump')}
+          override={commands?.intake_pump_override}
         />
-        <ActuatorCard
-          label="Collect Pump"
+        <ActuatorStatusCard
+          label="Collect"
           icon="water-pump-off"
           active={!!data.collect_pump_active}
-          desired={!!deviceState?.desired_collect_pump}
-          isManual={isManual}
-          onPress={() => toggleDesired('desired_collect_pump')}
+          override={commands?.collect_pump_override}
         />
       </View>
-
-      {/* Mist row (full width) */}
       <View style={styles.row}>
-        <Pressable
-          disabled={!isManual}
-          onPress={() => toggleDesired('desired_mist')}
-          style={({ pressed }) => [
-            styles.metricCard,
-            { flex: 1 },
-            isManual && styles.metricCardManual,
-            pressed && isManual && styles.metricCardPressed,
-          ]}
-        >
+        <View style={[styles.metricCard, { flex: 1 }]}>
           <View style={styles.metricHeader}>
             <View style={[styles.metricIcon, { backgroundColor: data.mist_active ? '#EBF5FF' : '#F2F2F7' }]}>
               <Animated.View style={data.mist_active ? { transform: [{ scale: mistScale }] } : undefined}>
@@ -277,16 +253,64 @@ export default function HomeScreen() {
               </Animated.View>
             </View>
             <Text style={styles.metricLabel}>Mister</Text>
+            {commands?.mist_override && commands.mist_override !== 'auto' && (
+              <View style={styles.overrideBadge}>
+                <Text style={styles.overrideBadgeText}>{commands.mist_override.toUpperCase()}</Text>
+              </View>
+            )}
           </View>
           <Text style={[styles.metricValue, !data.mist_active && styles.valueOff]}>
             {data.mist_active ? 'ON' : 'OFF'}
           </Text>
           <Text style={[styles.metricSub, data.mist_active ? styles.subPositive : {}]}>
-            {isManual
-              ? `Desired: ${deviceState?.desired_mist ? 'ON' : 'OFF'} · tap to toggle`
-              : data.mist_active ? 'Distilling' : 'Idle'}
+            {data.mist_active ? 'Distilling' : 'Idle'}
           </Text>
-        </Pressable>
+        </View>
+      </View>
+
+      {/* ── Manual Controls ── */}
+      <View style={styles.controlsHeader}>
+        <Text style={styles.sectionLabel}>Manual Controls</Text>
+        {anyOverride ? (
+          <Pressable onPress={resetAll} style={styles.resetBtn}>
+            <Text style={styles.resetText}>Reset all to Auto</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Text style={styles.controlsHint}>
+        Commands take effect on the next ESP32 sync (~15s).
+      </Text>
+
+      <View style={styles.controlCard}>
+        <OverrideRow
+          label="Intake Pump"
+          value={commands?.intake_pump_override ?? 'auto'}
+          onChange={(v) => setOverride('intake_pump_override', v)}
+        />
+        <View style={styles.divider} />
+        <OverrideRow
+          label="Collection Pump"
+          value={commands?.collect_pump_override ?? 'auto'}
+          onChange={(v) => setOverride('collect_pump_override', v)}
+        />
+        <View style={styles.divider} />
+        <OverrideRow
+          label="Mister"
+          value={commands?.mist_override ?? 'auto'}
+          onChange={(v) => setOverride('mist_override', v)}
+        />
+        <View style={styles.divider} />
+        <View style={styles.sleepRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.controlRowLabel}>Sleep Device</Text>
+            <Text style={styles.controlRowSub}>ESP32 sleeps until next wake window</Text>
+          </View>
+          <Switch
+            value={!!commands?.sleep}
+            onValueChange={setSleep}
+            trackColor={{ false: '#E5E5EA', true: '#FF9500' }}
+          />
+        </View>
       </View>
 
       <View style={{ height: 30 }} />
@@ -294,236 +318,160 @@ export default function HomeScreen() {
   );
 }
 
-function ActuatorCard({
+function ActuatorStatusCard({
   label,
   icon,
   active,
-  desired,
-  isManual,
-  onPress,
+  override,
 }: {
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   active: boolean;
-  desired: boolean;
-  isManual: boolean;
-  onPress: () => void;
+  override?: Override;
 }) {
   return (
-    <Pressable
-      disabled={!isManual}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.metricCard,
-        isManual && styles.metricCardManual,
-        pressed && isManual && styles.metricCardPressed,
-      ]}
-    >
+    <View style={styles.metricCard}>
       <View style={styles.metricHeader}>
         <View style={[styles.metricIcon, { backgroundColor: active ? '#EBF5FF' : '#F2F2F7' }]}>
           <MaterialCommunityIcons name={icon} size={16} color={active ? '#007AFF' : '#C7C7CC'} />
         </View>
         <Text style={styles.metricLabel}>{label}</Text>
+        {override && override !== 'auto' && (
+          <View style={styles.overrideBadge}>
+            <Text style={styles.overrideBadgeText}>{override.toUpperCase()}</Text>
+          </View>
+        )}
       </View>
       <Text style={[styles.metricValue, !active && styles.valueOff]}>{active ? 'ON' : 'OFF'}</Text>
       <Text style={[styles.metricSub, active ? styles.subPositive : {}]}>
-        {isManual ? `Desired: ${desired ? 'ON' : 'OFF'} · tap to toggle` : active ? 'Active' : 'Idle'}
+        {active ? 'Active' : 'Idle'}
       </Text>
-    </Pressable>
+    </View>
+  );
+}
+
+function OverrideRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: Override;
+  onChange: (v: Override) => void;
+}) {
+  return (
+    <View style={styles.controlRow}>
+      <Text style={styles.controlRowLabel}>{label}</Text>
+      <View style={styles.pillGroup}>
+        {(['auto', 'on', 'off'] as Override[]).map((opt) => {
+          const active = value === opt;
+          const activeBgStyle =
+            opt === 'on' ? styles.pillOn : opt === 'off' ? styles.pillOff : styles.pillAuto;
+          const activeTextStyle =
+            opt === 'auto' ? styles.pillTextActiveDark : styles.pillTextActiveLight;
+          return (
+            <Pressable
+              key={opt}
+              onPress={() => onChange(opt)}
+              style={[styles.pill, active && activeBgStyle]}
+            >
+              <Text style={[styles.pillText, active && activeTextStyle]}>
+                {opt.toUpperCase()}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F6FA',
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    paddingBottom: 34,
-  },
+  container: { flex: 1, backgroundColor: '#F5F6FA' },
+  centered: { alignItems: 'center', justifyContent: 'center' },
+  content: { paddingBottom: 34 },
 
-  // ── Loading ──
   loadingIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    backgroundColor: '#EBF5FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    width: 60, height: 60, borderRadius: 16, backgroundColor: '#EBF5FF',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  loadingTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    letterSpacing: 1.5,
-  },
-  loadingSubtitle: {
-    fontSize: 13,
-    color: '#8E8E93',
-    marginTop: 4,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#FF3B30',
-    fontWeight: '500',
-    marginTop: 20,
-  },
-  connectingText: {
-    fontSize: 13,
-    color: '#007AFF',
-    marginTop: 20,
-  },
+  loadingTitle: { fontSize: 22, fontWeight: '700', color: '#1C1C1E', letterSpacing: 1.5 },
+  loadingSubtitle: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
+  errorText: { fontSize: 13, color: '#FF3B30', fontWeight: '500', marginTop: 20 },
+  connectingText: { fontSize: 13, color: '#007AFF', marginTop: 20 },
 
-  // ── Header ──
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 2,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: 20, paddingTop: 60, paddingBottom: 2,
   },
-  greeting: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
+  greeting: { fontSize: 24, fontWeight: '700', color: '#1C1C1E' },
 
-  // ── Timestamp ──
-  timestamp: {
-    fontSize: 12,
-    color: '#AEAEB2',
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 6,
-  },
+  timestamp: { fontSize: 12, color: '#AEAEB2', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 6 },
 
-  // ── Sections ──
   sectionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 10,
+    fontSize: 16, fontWeight: '600', color: '#1C1C1E',
+    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10,
   },
-  row: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 4,
-  },
+  row: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 4 },
 
-  // ── Metric Card ──
   metricCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  metricHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
+  metricHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   metricIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 32, height: 32, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
-  metricLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#8E8E93',
-    flex: 1,
-  },
+  metricLabel: { fontSize: 13, fontWeight: '500', color: '#8E8E93', flex: 1 },
   metricValue: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -0.5,
-    marginBottom: 4,
+    fontSize: 26, fontWeight: '700', color: '#1C1C1E',
+    fontVariant: ['tabular-nums'], letterSpacing: -0.5, marginBottom: 4,
   },
-  valueOff: {
-    color: '#C7C7CC',
-  },
-  metricSub: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#AEAEB2',
-  },
-  subPositive: {
-    color: '#34C759',
-  },
-  subWarning: {
-    color: '#FF9F0A',
-  },
+  valueOff: { color: '#C7C7CC' },
+  metricSub: { fontSize: 12, fontWeight: '500', color: '#AEAEB2' },
+  subPositive: { color: '#34C759' },
+  subWarning: { color: '#FF9F0A' },
 
-  // ── Controls / Mode toggle ──
+  overrideBadge: {
+    backgroundColor: '#FF9500', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  overrideBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+
+  // ── Controls ──
   controlsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
     paddingRight: 20,
   },
-  modeToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 999,
-    padding: 3,
+  controlsHint: { fontSize: 12, color: '#8E8E93', paddingHorizontal: 20, paddingBottom: 10 },
+  controlCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 16, padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  modePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
+  controlRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 4,
   },
-  modePillActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 1,
+  sleepRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 4,
   },
-  modePillActiveManual: {
-    backgroundColor: '#FF9500',
-  },
-  modePillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
-  },
-  modePillTextActive: {
-    color: '#1C1C1E',
-  },
-  modePillTextManual: {
-    color: '#FFFFFF',
-  },
-  manualHint: {
-    fontSize: 12,
-    color: '#FF9500',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  metricCardManual: {
-    borderWidth: 1.5,
-    borderColor: '#FF9500',
-  },
-  metricCardPressed: {
-    opacity: 0.7,
-  },
+  controlRowLabel: { fontSize: 15, fontWeight: '500', color: '#1C1C1E' },
+  controlRowSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+  divider: { height: 1, backgroundColor: '#F2F2F7', marginVertical: 12 },
+
+  pillGroup: { flexDirection: 'row', gap: 4, backgroundColor: '#F2F2F7', borderRadius: 999, padding: 3 },
+  pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minWidth: 44, alignItems: 'center' },
+  pillAuto: { backgroundColor: '#FFFFFF' },
+  pillOn:   { backgroundColor: '#34C759' },
+  pillOff:  { backgroundColor: '#FF3B30' },
+  pillText: { fontSize: 11, fontWeight: '700', color: '#8E8E93', letterSpacing: 0.3 },
+  pillTextActiveDark: { color: '#1C1C1E' },
+  pillTextActiveLight: { color: '#FFFFFF' },
+
+  resetBtn: { paddingVertical: 18, paddingHorizontal: 4 },
+  resetText: { fontSize: 13, color: '#007AFF', fontWeight: '500' },
 });

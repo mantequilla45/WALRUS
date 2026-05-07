@@ -6,7 +6,12 @@ Business logic for storing and retrieving sensor data
 from datetime import datetime, timedelta
 from typing import List, Optional
 from config.supabase import get_supabase_admin
-from models.sensor_reading import DeviceCommand, ESP32DataPayload, SensorReading
+from models.sensor_reading import (
+    DeviceCommandOverrides,
+    ESP32CommandsResponse,
+    ESP32DataPayload,
+    SensorReading,
+)
 
 
 class DataService:
@@ -15,26 +20,28 @@ class DataService:
     def __init__(self):
         self.supabase = get_supabase_admin()
         self.table_name = "sensor_readings"
-        self.device_state_table = "device_state"
+        self.device_commands_table = "device_commands"
 
-    async def get_device_command(self, device_id: str) -> DeviceCommand:
-        """Read the desired state for a device. Returns auto/off defaults if no row exists."""
+    async def get_device_commands(self, device_id: str) -> ESP32CommandsResponse:
+        """Read current commands for a device. Defaults to all 'auto' / sleep=false if no row exists."""
         result = (
-            self.supabase.table(self.device_state_table)
-            .select("mode, desired_intake_pump, desired_collect_pump, desired_mist")
+            self.supabase.table(self.device_commands_table)
+            .select("sleep, intake_pump_override, collect_pump_override, mist_override")
             .eq("device_id", device_id)
             .limit(1)
             .execute()
         )
         if result.data:
             row = result.data[0]
-            return DeviceCommand(
-                mode=row.get("mode") or "auto",
-                desired_intake_pump=bool(row.get("desired_intake_pump")),
-                desired_collect_pump=bool(row.get("desired_collect_pump")),
-                desired_mist=bool(row.get("desired_mist")),
+            return ESP32CommandsResponse(
+                sleep=bool(row.get("sleep")),
+                commands=DeviceCommandOverrides(
+                    intake_pump_override=row.get("intake_pump_override") or "auto",
+                    collect_pump_override=row.get("collect_pump_override") or "auto",
+                    mist_override=row.get("mist_override") or "auto",
+                ),
             )
-        return DeviceCommand()
+        return ESP32CommandsResponse()
 
     async def store_sensor_data(self, payload: ESP32DataPayload) -> SensorReading:
         """

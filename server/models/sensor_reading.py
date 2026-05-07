@@ -47,20 +47,24 @@ class SensorReading(BaseModel):
     state: Optional[str] = None
 
 
-class DeviceCommand(BaseModel):
-    """Desired device state returned to the ESP32 in the POST /api/esp32/data response."""
-    mode: str = Field("auto", description="'auto' (ESP32 self-decides) or 'manual' (obey desired_*)")
-    desired_intake_pump: bool = False
-    desired_collect_pump: bool = False
-    desired_mist: bool = False
+class DeviceCommandOverrides(BaseModel):
+    """Per-actuator overrides. 'auto' = sensor logic, 'on' = force on, 'off' = force off."""
+    intake_pump_override: str = "auto"
+    collect_pump_override: str = "auto"
+    mist_override: str = "auto"
+
+
+class ESP32CommandsResponse(BaseModel):
+    """Exact response shape returned to ESP32 from POST /api/esp32/data (per INTEGRATION.md)."""
+    sleep: bool = False
+    commands: DeviceCommandOverrides = DeviceCommandOverrides()
 
 
 class SensorReadingResponse(BaseModel):
-    """API response for sensor readings"""
+    """API response for sensor readings (mobile-side endpoints)"""
     success: bool
     data: Optional[SensorReading] = None
     message: Optional[str] = None
-    command: Optional[DeviceCommand] = None
 
 
 class HistoricalDataResponse(BaseModel):
