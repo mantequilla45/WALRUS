@@ -1,17 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable, Switch } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { StatusBadge } from '@/components/StatusBadge';
+import { useRouter } from 'expo-router';
 import { walrusAPI, type SensorReading, type DeviceCommands, type Override } from '@/services/api';
+import { computeDeviceStatus } from '@/services/deviceStatus';
 
-type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'mist_override';
+type FocusKey = 'tds' | 'clean_level' | 'basin_temp' | 'activations';
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [data, setData] = useState<SensorReading | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [commands, setCommands] = useState<DeviceCommands | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  // Tick every 5s so "X ago" labels and offline detection stay current
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  const goToAnalytics = (focus: FocusKey) =>
+    router.push({ pathname: '/(tabs)/analytics', params: { focus } });
 
   // Mist pulse animation
   const mistPulse = useRef(new Animated.Value(0)).current;
@@ -63,33 +75,6 @@ export default function HomeScreen() {
     };
   }, [fetchData]);
 
-  const setOverride = async (key: OverrideKey, value: Override) => {
-    setCommands((prev) => (prev ? { ...prev, [key]: value } : prev));
-    const next = await walrusAPI.setDeviceCommands({ [key]: value } as Partial<DeviceCommands>);
-    if (next) setCommands(next);
-  };
-
-  const setSleep = async (sleep: boolean) => {
-    setCommands((prev) => (prev ? { ...prev, sleep } : prev));
-    const next = await walrusAPI.setDeviceCommands({ sleep });
-    if (next) setCommands(next);
-  };
-
-  const resetAll = async () => {
-    setCommands((prev) =>
-      prev
-        ? { ...prev, sleep: false, intake_pump_override: 'auto', collect_pump_override: 'auto', mist_override: 'auto' }
-        : prev
-    );
-    const next = await walrusAPI.setDeviceCommands({
-      sleep: false,
-      intake_pump_override: 'auto',
-      collect_pump_override: 'auto',
-      mist_override: 'auto',
-    });
-    if (next) setCommands(next);
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchData();
@@ -122,15 +107,47 @@ export default function HomeScreen() {
     );
   }
 
-  const tds = data.tds_ppm ?? 0;
-  const cleanLevel = data.clean_level_cm ?? 0;
-  const basin = data.basin_temp ?? 0;
+  const status = computeDeviceStatus(data, commands, now);
+  const offline = status.kind === 'offline' || status.kind === 'unknown' || status.kind === 'sleeping';
+  const isSleeping = status.kind === 'sleeping';
+
+  const togglePower = () => {
+    const turningOff = !isSleeping;
+    Alert.alert(
+      turningOff ? 'Turn off device?' : 'Turn device back on?',
+      turningOff
+        ? 'The device will stop monitoring and enter deep sleep until the next scheduled wake.'
+        : 'The device will resume normal monitoring on its next wake cycle.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: turningOff ? 'Turn off' : 'Turn on',
+          style: turningOff ? 'destructive' : 'default',
+          onPress: async () => {
+            setCommands((prev) => (prev ? { ...prev, sleep: turningOff } : prev));
+            const next = await walrusAPI.setDeviceCommands({ sleep: turningOff });
+            if (next) setCommands(next);
+          },
+        },
+      ]
+    );
+  };
+
+  // Treat sentinel/out-of-range sensor values as "no reading" (ESP32 convention: 999 = error)
+  const validNumber = (n: number | null, max: number, min: number = -100): number | null =>
+    n === null || n >= 999 || n < min || n > max ? null : n;
+
+  const tdsRaw = validNumber(data.tds_ppm, 5000, 0);
+  const cleanRaw = validNumber(data.clean_level_cm, 100);
+  const basinRaw = validNumber(data.basin_temp, 100);
+
+  const tds = tdsRaw ?? 0;
+  const cleanLevel = cleanRaw ?? 0;
+  const basin = basinRaw ?? 0;
+  const tdsMissing = tdsRaw === null;
+  const cleanMissing = cleanRaw === null;
+  const basinMissing = basinRaw === null;
   const floatOk = data.float_water_detect === true;
-  const anyOverride =
-    (commands?.intake_pump_override && commands.intake_pump_override !== 'auto') ||
-    (commands?.collect_pump_override && commands.collect_pump_override !== 'auto') ||
-    (commands?.mist_override && commands.mist_override !== 'auto') ||
-    commands?.sleep;
 
   return (
     <ScrollView
@@ -139,87 +156,138 @@ export default function HomeScreen() {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" />
       }
+      bounces
+      alwaysBounceVertical
+      overScrollMode="always"
+      decelerationRate="normal"
+      showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Dashboard</Text>
         </View>
-        <StatusBadge status={(data.state as any) || 'Idle'} />
+        <StatusPill status={status} />
       </View>
 
       <Text style={styles.timestamp}>Updated {getTimeAgo()}</Text>
 
+      {/* ── Power ── */}
+      <Pressable
+        onPress={togglePower}
+        style={({ pressed }) => [
+          styles.powerCard,
+          isSleeping && styles.powerCardOff,
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <View style={[styles.powerIcon, { backgroundColor: isSleeping ? '#FFEBEB' : '#E8F8ED' }]}>
+          <Ionicons name="power" size={22} color={isSleeping ? '#FF3B30' : '#34C759'} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.powerTitle}>{isSleeping ? 'Device is off' : 'Device is on'}</Text>
+          <Text style={styles.powerSub}>
+            {isSleeping ? 'Tap to turn on' : 'Tap to turn off'}
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color="#C7C7CC"
+        />
+      </Pressable>
+
       {/* ── Water Quality ── */}
       <Text style={styles.sectionLabel}>Water Quality</Text>
       <View style={styles.row}>
-        <View style={styles.metricCard}>
+        <Pressable
+          onPress={() => goToAnalytics('tds')}
+          disabled={offline}
+          style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
+        >
           <View style={styles.metricHeader}>
             <View style={[styles.metricIcon, { backgroundColor: '#EBF5FF' }]}>
               <MaterialCommunityIcons name="water-check" size={16} color="#007AFF" />
             </View>
             <Text style={styles.metricLabel}>Purity (TDS)</Text>
+            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
           </View>
-          <Text style={styles.metricValue}>{tds}</Text>
+          <Text style={[styles.metricValue, (offline || tdsMissing) && styles.valueOff]}>
+            {offline ? 0 : tdsMissing ? 0 : tds}
+          </Text>
           <Text style={[
             styles.metricSub,
-            tds < 300 ? styles.subPositive : styles.subWarning,
+            !offline && !tdsMissing && (tds < 300 ? styles.subPositive : styles.subWarning),
           ]}>
-            {tds < 300 ? 'Clean' : tds < 500 ? 'Moderate' : 'Poor'} · ppm
+            {offline ? 'No data' : tdsMissing ? 'Sensor error' : `${tds < 300 ? 'Clean' : tds < 500 ? 'Moderate' : 'Poor'} · ppm`}
           </Text>
-        </View>
+        </Pressable>
 
-        <View style={styles.metricCard}>
+        <Pressable
+          onPress={() => goToAnalytics('clean_level')}
+          disabled={offline}
+          style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
+        >
           <View style={styles.metricHeader}>
             <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
               <Ionicons name="water-outline" size={16} color="#5AC8FA" />
             </View>
             <Text style={styles.metricLabel}>Clean Level</Text>
+            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
           </View>
-          <Text style={styles.metricValue}>{cleanLevel.toFixed(1)}</Text>
+          <Text style={[styles.metricValue, (offline || cleanMissing) && styles.valueOff]}>
+            {offline ? '0.0' : cleanMissing ? '0.0' : cleanLevel.toFixed(1)}
+          </Text>
           <Text style={[
             styles.metricSub,
-            cleanLevel > 5 ? styles.subPositive : styles.subWarning,
+            !offline && !cleanMissing && (cleanLevel > 5 ? styles.subPositive : styles.subWarning),
           ]}>
-            {cleanLevel > 5 ? 'Collected' : 'Low'} · cm
+            {offline ? 'No data' : cleanMissing ? 'Sensor error' : `${cleanLevel > 5 ? 'Collected' : 'Low'} · cm`}
           </Text>
-        </View>
+        </Pressable>
       </View>
 
       {/* ── Sensors ── */}
       <Text style={styles.sectionLabel}>Sensors</Text>
       <View style={styles.row}>
-        <View style={styles.metricCard}>
+        <Pressable
+          onPress={() => goToAnalytics('basin_temp')}
+          disabled={offline}
+          style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
+        >
           <View style={styles.metricHeader}>
             <View style={[styles.metricIcon, { backgroundColor: '#FFF3E0' }]}>
               <Ionicons name="flame" size={16} color="#FF9500" />
             </View>
             <Text style={styles.metricLabel}>Basin Temp</Text>
+            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
           </View>
-          <Text style={styles.metricValue}>{basin.toFixed(1)}°</Text>
+          <Text style={[styles.metricValue, (offline || basinMissing) && styles.valueOff]}>
+            {offline ? '0.0°' : basinMissing ? '0.0°' : `${basin.toFixed(1)}°`}
+          </Text>
           <Text style={[
             styles.metricSub,
-            basin < 50 ? styles.subPositive : styles.subWarning,
+            !offline && !basinMissing && (basin < 50 ? styles.subPositive : styles.subWarning),
           ]}>
-            {basin < 50 ? 'Normal' : basin < 55 ? 'Warm' : 'Hot'} · °C
+            {offline ? 'No data' : basinMissing ? 'Sensor error' : `${basin < 50 ? 'Normal' : basin < 55 ? 'Warm' : 'Hot'} · °C`}
           </Text>
-        </View>
+        </Pressable>
 
-        <View style={styles.metricCard}>
+        <View style={[styles.metricCard, offline && styles.metricCardOffline]}>
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: floatOk ? '#E8F8ED' : '#FFEBEB' }]}>
+            <View style={[styles.metricIcon, { backgroundColor: offline ? '#F2F2F7' : (floatOk ? '#E8F8ED' : '#FFEBEB') }]}>
               <MaterialCommunityIcons
-                name={floatOk ? 'water' : 'water-off'}
+                name={offline ? 'water-off' : (floatOk ? 'water' : 'water-off')}
                 size={16}
-                color={floatOk ? '#34C759' : '#FF3B30'}
+                color={offline ? '#C7C7CC' : (floatOk ? '#34C759' : '#FF3B30')}
               />
             </View>
             <Text style={styles.metricLabel}>Float Switch</Text>
           </View>
-          <Text style={[styles.metricValue, !floatOk && styles.valueOff]}>
-            {floatOk ? 'OK' : 'DRY'}
+          <Text style={[styles.metricValue, (!floatOk || offline) && styles.valueOff]}>
+            {offline ? 'DRY' : (floatOk ? 'OK' : 'DRY')}
           </Text>
-          <Text style={[styles.metricSub, floatOk ? styles.subPositive : styles.subWarning]}>
-            {floatOk ? 'Water detected' : 'No water'}
+          <Text style={[styles.metricSub, !offline && (floatOk ? styles.subPositive : styles.subWarning)]}>
+            {offline ? 'No data' : (floatOk ? 'Water detected' : 'No water')}
           </Text>
         </View>
       </View>
@@ -232,85 +300,29 @@ export default function HomeScreen() {
           icon="water-pump"
           active={!!data.intake_pump_active}
           override={commands?.intake_pump_override}
+          offline={offline}
+          onPress={() => goToAnalytics('activations')}
         />
         <ActuatorStatusCard
           label="Collect"
           icon="water-pump-off"
           active={!!data.collect_pump_active}
           override={commands?.collect_pump_override}
+          offline={offline}
+          onPress={() => goToAnalytics('activations')}
         />
       </View>
       <View style={styles.row}>
-        <View style={[styles.metricCard, { flex: 1 }]}>
-          <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: data.mist_active ? '#EBF5FF' : '#F2F2F7' }]}>
-              <Animated.View style={data.mist_active ? { transform: [{ scale: mistScale }] } : undefined}>
-                <MaterialCommunityIcons
-                  name="weather-fog"
-                  size={16}
-                  color={data.mist_active ? '#007AFF' : '#C7C7CC'}
-                />
-              </Animated.View>
-            </View>
-            <Text style={styles.metricLabel}>Mister</Text>
-            {commands?.mist_override && commands.mist_override !== 'auto' && (
-              <View style={styles.overrideBadge}>
-                <Text style={styles.overrideBadgeText}>{commands.mist_override.toUpperCase()}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={[styles.metricValue, !data.mist_active && styles.valueOff]}>
-            {data.mist_active ? 'ON' : 'OFF'}
-          </Text>
-          <Text style={[styles.metricSub, data.mist_active ? styles.subPositive : {}]}>
-            {data.mist_active ? 'Distilling' : 'Idle'}
-          </Text>
-        </View>
-      </View>
-
-      {/* ── Manual Controls ── */}
-      <View style={styles.controlsHeader}>
-        <Text style={styles.sectionLabel}>Manual Controls</Text>
-        {anyOverride ? (
-          <Pressable onPress={resetAll} style={styles.resetBtn}>
-            <Text style={styles.resetText}>Reset all to Auto</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <Text style={styles.controlsHint}>
-        Commands take effect on the next ESP32 sync (~15s).
-      </Text>
-
-      <View style={styles.controlCard}>
-        <OverrideRow
-          label="Intake Pump"
-          value={commands?.intake_pump_override ?? 'auto'}
-          onChange={(v) => setOverride('intake_pump_override', v)}
-        />
-        <View style={styles.divider} />
-        <OverrideRow
-          label="Collection Pump"
-          value={commands?.collect_pump_override ?? 'auto'}
-          onChange={(v) => setOverride('collect_pump_override', v)}
-        />
-        <View style={styles.divider} />
-        <OverrideRow
+        <ActuatorStatusCard
           label="Mister"
-          value={commands?.mist_override ?? 'auto'}
-          onChange={(v) => setOverride('mist_override', v)}
+          icon="weather-fog"
+          active={!!data.mist_active}
+          override={commands?.mist_override}
+          offline={offline}
+          animatedScale={data.mist_active ? mistScale : undefined}
+          fullWidth
+          onPress={() => goToAnalytics('activations')}
         />
-        <View style={styles.divider} />
-        <View style={styles.sleepRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.controlRowLabel}>Sleep Device</Text>
-            <Text style={styles.controlRowSub}>ESP32 sleeps until next wake window</Text>
-          </View>
-          <Switch
-            value={!!commands?.sleep}
-            onValueChange={setSleep}
-            trackColor={{ false: '#E5E5EA', true: '#FF9500' }}
-          />
-        </View>
       </View>
 
       <View style={{ height: 30 }} />
@@ -323,64 +335,95 @@ function ActuatorStatusCard({
   icon,
   active,
   override,
+  offline,
+  animatedScale,
+  fullWidth,
+  onPress,
 }: {
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   active: boolean;
   override?: Override;
+  offline?: boolean;
+  animatedScale?: Animated.AnimatedInterpolation<number>;
+  fullWidth?: boolean;
+  onPress?: () => void;
 }) {
-  return (
-    <View style={styles.metricCard}>
+  // Predict the state based on the override, so the user gets immediate feedback
+  // even though the device may take up to ~15s to actually apply it.
+  const expected = override === 'on' ? true : override === 'off' ? false : active;
+  const pending = override && override !== 'auto' && expected !== active;
+
+  const iconColor = offline ? '#C7C7CC' : active ? '#007AFF' : '#C7C7CC';
+  const iconBg = offline ? '#F2F2F7' : active ? '#EBF5FF' : '#F2F2F7';
+
+  const iconWrapper = animatedScale && !offline ? (
+    <Animated.View style={{ transform: [{ scale: animatedScale }] }}>
+      <MaterialCommunityIcons name={icon} size={16} color={iconColor} />
+    </Animated.View>
+  ) : (
+    <MaterialCommunityIcons name={icon} size={16} color={iconColor} />
+  );
+
+  const body = (
+    <>
       <View style={styles.metricHeader}>
-        <View style={[styles.metricIcon, { backgroundColor: active ? '#EBF5FF' : '#F2F2F7' }]}>
-          <MaterialCommunityIcons name={icon} size={16} color={active ? '#007AFF' : '#C7C7CC'} />
+        <View style={[styles.metricIcon, { backgroundColor: iconBg }]}>
+          {iconWrapper}
         </View>
         <Text style={styles.metricLabel}>{label}</Text>
-        {override && override !== 'auto' && (
+        {!offline && override && override !== 'auto' && (
           <View style={styles.overrideBadge}>
             <Text style={styles.overrideBadgeText}>{override.toUpperCase()}</Text>
           </View>
         )}
+        {onPress && !offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
       </View>
-      <Text style={[styles.metricValue, !active && styles.valueOff]}>{active ? 'ON' : 'OFF'}</Text>
-      <Text style={[styles.metricSub, active ? styles.subPositive : {}]}>
-        {active ? 'Active' : 'Idle'}
+      <Text style={[styles.metricValue, (offline || !active) && styles.valueOff]}>
+        {offline ? 'OFF' : active ? 'ON' : 'OFF'}
       </Text>
-    </View>
+      {offline ? (
+        <Text style={styles.metricSub}>No data</Text>
+      ) : pending ? (
+        <View style={styles.pendingRow}>
+          <Ionicons name="time-outline" size={11} color="#FF9500" />
+          <Text style={styles.pendingText}>Pending — applies on next sync</Text>
+        </View>
+      ) : (
+        <Text style={[styles.metricSub, active ? styles.subPositive : {}]}>
+          {active ? 'Active' : 'Idle'}
+        </Text>
+      )}
+    </>
   );
+
+  if (onPress && !offline) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.metricCard,
+          fullWidth && { flex: 1 },
+          pressed && styles.metricCardPressed,
+        ]}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.metricCard, fullWidth && { flex: 1 }, offline && styles.metricCardOffline]}>{body}</View>;
 }
 
-function OverrideRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: Override;
-  onChange: (v: Override) => void;
-}) {
+function StatusPill({ status }: { status: ReturnType<typeof computeDeviceStatus> }) {
   return (
-    <View style={styles.controlRow}>
-      <Text style={styles.controlRowLabel}>{label}</Text>
-      <View style={styles.pillGroup}>
-        {(['auto', 'on', 'off'] as Override[]).map((opt) => {
-          const active = value === opt;
-          const activeBgStyle =
-            opt === 'on' ? styles.pillOn : opt === 'off' ? styles.pillOff : styles.pillAuto;
-          const activeTextStyle =
-            opt === 'auto' ? styles.pillTextActiveDark : styles.pillTextActiveLight;
-          return (
-            <Pressable
-              key={opt}
-              onPress={() => onChange(opt)}
-              style={[styles.pill, active && activeBgStyle]}
-            >
-              <Text style={[styles.pillText, active && activeTextStyle]}>
-                {opt.toUpperCase()}
-              </Text>
-            </Pressable>
-          );
-        })}
+    <View style={[styles.statusPill, { backgroundColor: status.bgColor }]}>
+      <Ionicons name={status.iconName as any} size={14} color={status.color} />
+      <View>
+        <Text style={[styles.statusLabel, { color: status.color }]}>{status.label}</Text>
+        {status.detail ? (
+          <Text style={[styles.statusDetail, { color: status.color }]}>{status.detail}</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -404,7 +447,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
     paddingHorizontal: 20, paddingTop: 60, paddingBottom: 2,
   },
-  greeting: { fontSize: 24, fontWeight: '700', color: '#1C1C1E' },
+  greeting: { fontSize: 32, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.5 },
 
   timestamp: { fontSize: 12, color: '#AEAEB2', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 6 },
 
@@ -439,39 +482,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 2,
   },
   overrideBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+  pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pendingText: { fontSize: 12, fontWeight: '500', color: '#FF9500' },
 
-  // ── Controls ──
-  controlsHeader: {
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-    paddingRight: 20,
-  },
-  controlsHint: { fontSize: 12, color: '#8E8E93', paddingHorizontal: 20, paddingBottom: 10 },
-  controlCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 16, padding: 16,
+  metricCardPressed: { opacity: 0.7 },
+  metricCardOffline: { opacity: 0.55 },
+
+  // Power toggle card
+  powerCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginTop: 10, marginBottom: 4,
+    padding: 16,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  controlRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 4,
+  powerCardOff: {
+    backgroundColor: '#F8F8FA',
   },
-  sleepRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 4,
+  powerIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  controlRowLabel: { fontSize: 15, fontWeight: '500', color: '#1C1C1E' },
-  controlRowSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#F2F2F7', marginVertical: 12 },
+  powerTitle: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
+  powerSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
 
-  pillGroup: { flexDirection: 'row', gap: 4, backgroundColor: '#F2F2F7', borderRadius: 999, padding: 3 },
-  pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minWidth: 44, alignItems: 'center' },
-  pillAuto: { backgroundColor: '#FFFFFF' },
-  pillOn:   { backgroundColor: '#34C759' },
-  pillOff:  { backgroundColor: '#FF3B30' },
-  pillText: { fontSize: 11, fontWeight: '700', color: '#8E8E93', letterSpacing: 0.3 },
-  pillTextActiveDark: { color: '#1C1C1E' },
-  pillTextActiveLight: { color: '#FFFFFF' },
-
-  resetBtn: { paddingVertical: 18, paddingHorizontal: 4 },
-  resetText: { fontSize: 13, color: '#007AFF', fontWeight: '500' },
+  // Status pill (composite device status in header)
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
+    maxWidth: 180,
+  },
+  statusLabel: { fontSize: 13, fontWeight: '700' },
+  statusDetail: { fontSize: 10, fontWeight: '500', opacity: 0.8 },
 });

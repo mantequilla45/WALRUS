@@ -28,144 +28,157 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Ionicons name="settings-outline" size={24} color="#94a3b8" />
-          <Text style={styles.title}>Settings</Text>
+      <Text style={styles.title}>Settings</Text>
+      <Text style={styles.subtitle}>App preferences and device info</Text>
+
+      {/* ── Refresh Rate ── */}
+      <Text style={styles.sectionLabel}>Refresh Rate</Text>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={[styles.iconWrap, { backgroundColor: '#EBF5FF' }]}>
+            <Ionicons name="timer-outline" size={16} color="#007AFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>How often to fetch</Text>
+            <Text style={styles.cardSubtitle}>
+              Lower = more responsive, slightly more battery.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.pillGroup}>
+          {REFRESH_OPTIONS.map((opt) => {
+            const active = refreshRate === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => selectRate(opt.value)}
+                style={[styles.pill, active && styles.pillActive]}
+              >
+                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      {/* Refresh Rate */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="timer-outline" size={18} color="#38bdf8" />
-          <Text style={styles.sectionTitle}>Refresh Rate</Text>
-        </View>
-        <Text style={styles.sectionDesc}>
-          How often the app fetches new data from the server.
-        </Text>
-        <View style={styles.optionsRow}>
-          {REFRESH_OPTIONS.map((opt) => (
-            <Pressable
-              key={opt.value}
-              style={[styles.optionBtn, refreshRate === opt.value && styles.optionBtnActive]}
-              onPress={() => selectRate(opt.value)}
-            >
-              <Text style={[styles.optionLabel, refreshRate === opt.value && styles.optionLabelActive]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+      {/* ── About ── */}
+      <Text style={styles.sectionLabel}>About</Text>
+      <View style={styles.card}>
+        <Row label="App version" value="1.0.0" />
+        <Divider />
+        <Row label="Device ID" value="WALRUS_001" />
+        <Divider />
+        <Row label="System" value="WALRUS Water Purifier" />
       </View>
 
-      {/* About */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="information-circle-outline" size={18} color="#64748b" />
-          <Text style={styles.sectionTitle}>About</Text>
-        </View>
-        <View style={styles.aboutRow}>
-          <Text style={styles.aboutLabel}>Version</Text>
-          <Text style={styles.aboutValue}>1.0.0</Text>
-        </View>
-        <View style={styles.aboutRow}>
-          <Text style={styles.aboutLabel}>Device</Text>
-          <Text style={styles.aboutValue}>WALRUS_SIM</Text>
-        </View>
-      </View>
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
 
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
+    </View>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#080c14',
-  },
-  content: {
-    paddingBottom: 40,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 62,
-    paddingBottom: 20,
-    backgroundColor: '#0b1120',
-    borderBottomWidth: 1,
-    borderBottomColor: '#141e30',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  container: { flex: 1, backgroundColor: '#F5F6FA' },
+  content: { paddingBottom: 34 },
+
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#e2e8f0',
-    letterSpacing: 1,
+    fontSize: 32, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.5,
+    paddingHorizontal: 20, paddingTop: 60,
   },
-  section: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+  subtitle: {
+    fontSize: 13, color: '#8E8E93',
+    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
   },
-  sectionHeader: {
+
+  sectionLabel: {
+    fontSize: 16, fontWeight: '600', color: '#1C1C1E',
+    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10,
+  },
+
+  // Card
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  sectionDesc: {
-    fontSize: 13,
-    color: '#475569',
+    gap: 12,
     marginBottom: 14,
   },
-  optionsRow: {
-    flexDirection: 'row',
-    gap: 10,
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
-  optionBtn: {
-    flex: 1,
-    paddingVertical: 14,
+  cardTitle: {
+    fontSize: 15, fontWeight: '600', color: '#1C1C1E',
+  },
+  cardSubtitle: {
+    fontSize: 12, color: '#8E8E93', marginTop: 2,
+  },
+
+  // Pill group
+  pillGroup: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F2F7',
     borderRadius: 12,
-    backgroundColor: '#111a2b',
-    borderWidth: 1,
-    borderColor: '#1a2540',
+    padding: 4,
+    gap: 4,
+  },
+  pill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  optionBtnActive: {
-    borderColor: '#22d3ee',
-    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+  pillActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  optionLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#475569',
+  pillText: {
+    fontSize: 14, fontWeight: '600', color: '#8E8E93',
   },
-  optionLabelActive: {
-    color: '#22d3ee',
+  pillTextActive: {
+    color: '#007AFF',
   },
-  aboutRow: {
+
+  // About rows
+  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#141e30',
+    alignItems: 'center',
+    paddingVertical: 10,
   },
-  aboutLabel: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  aboutValue: {
-    fontSize: 14,
-    color: '#94a3b8',
-    fontWeight: '600',
+  rowLabel: { fontSize: 14, color: '#8E8E93' },
+  rowValue: { fontSize: 14, fontWeight: '500', color: '#1C1C1E' },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E5EA',
   },
 });

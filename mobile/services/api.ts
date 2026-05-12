@@ -46,19 +46,16 @@ export const walrusAPI = {
   /**
    * Get the latest sensor reading
    */
-  getLatest: async (deviceId?: string): Promise<LatestDataResponse> => {
+  getLatest: async (deviceId: string = DEFAULT_DEVICE_ID): Promise<LatestDataResponse> => {
     try {
-      let query = supabase
+      const query = supabase
         .from('sensor_readings')
         .select('*')
+        .eq('device_id', deviceId)
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (deviceId) {
-        query = query.eq('device_id', deviceId);
-      }
-
-      console.log('[API] getLatest: querying sensor_readings...');
+      console.log('[API] getLatest: querying sensor_readings for', deviceId);
       const { data, error } = await query.maybeSingle();
 
       if (error) {
@@ -84,7 +81,7 @@ export const walrusAPI = {
    */
   getHistory: async (
     duration: '1h' | '24h' | '7d' | '30d' = '24h',
-    deviceId?: string
+    deviceId: string = DEFAULT_DEVICE_ID
   ): Promise<{ success: boolean; data: SensorReading[]; count: number }> => {
     const durationMap: Record<string, number> = {
       '1h': 60 * 60 * 1000,
@@ -96,15 +93,12 @@ export const walrusAPI = {
     const since = new Date(Date.now() - durationMap[duration]).toISOString();
 
     try {
-      let query = supabase
+      const query = supabase
         .from('sensor_readings')
         .select('*')
+        .eq('device_id', deviceId)
         .gte('created_at', since)
         .order('created_at', { ascending: true });
-
-      if (deviceId) {
-        query = query.eq('device_id', deviceId);
-      }
 
       const { data, error } = await query;
 
@@ -123,17 +117,17 @@ export const walrusAPI = {
    */
   subscribeToReadings: (
     callback: (reading: SensorReading) => void,
-    deviceId?: string
+    deviceId: string = DEFAULT_DEVICE_ID
   ) => {
     const channel = supabase
-      .channel('sensor_readings_realtime')
+      .channel(`sensor_readings_${deviceId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'sensor_readings',
-          ...(deviceId ? { filter: `device_id=eq.${deviceId}` } : {}),
+          filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
           callback(payload.new as SensorReading);
@@ -141,7 +135,6 @@ export const walrusAPI = {
       )
       .subscribe();
 
-    // Return unsubscribe function
     return () => {
       supabase.removeChannel(channel);
     };
