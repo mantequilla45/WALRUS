@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { walrusAPI, type DeviceCommands, type Override, type SensorReading } from '@/services/api';
 import { computeDeviceStatus } from '@/services/deviceStatus';
 
-type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'mist_override';
+type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'mist_override' | 'peltier_override';
 
 export default function ControlsScreen() {
   const [commands, setCommands] = useState<DeviceCommands | null>(null);
@@ -45,7 +45,14 @@ export default function ControlsScreen() {
   const resetAll = async () => {
     setCommands((prev) =>
       prev
-        ? { ...prev, sleep: false, intake_pump_override: 'auto', collect_pump_override: 'auto', mist_override: 'auto' }
+        ? {
+            ...prev,
+            sleep: false,
+            intake_pump_override: 'auto',
+            collect_pump_override: 'auto',
+            mist_override: 'auto',
+            peltier_override: 'auto',
+          }
         : prev
     );
     const next = await walrusAPI.setDeviceCommands({
@@ -53,6 +60,7 @@ export default function ControlsScreen() {
       intake_pump_override: 'auto',
       collect_pump_override: 'auto',
       mist_override: 'auto',
+      peltier_override: 'auto',
     });
     if (next) setCommands(next);
   };
@@ -61,6 +69,7 @@ export default function ControlsScreen() {
     (commands?.intake_pump_override && commands.intake_pump_override !== 'auto') ||
     (commands?.collect_pump_override && commands.collect_pump_override !== 'auto') ||
     (commands?.mist_override && commands.mist_override !== 'auto') ||
+    (commands?.peltier_override && commands.peltier_override !== 'auto') ||
     commands?.sleep;
 
   return (
@@ -108,6 +117,13 @@ export default function ControlsScreen() {
         icon="weather-fog"
         value={commands?.mist_override ?? 'auto'}
         onChange={(v) => setOverride('mist_override', v)}
+        disabled={locked}
+      />
+      <ActuatorCard
+        label="Peltier (Heater)"
+        icon="radiator"
+        value={commands?.peltier_override ?? 'auto'}
+        onChange={(v) => setOverride('peltier_override', v)}
         disabled={locked}
       />
 

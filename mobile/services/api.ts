@@ -34,6 +34,7 @@ export interface DeviceCommands {
   intake_pump_override: Override;
   collect_pump_override: Override;
   mist_override: Override;
+  peltier_override: Override;
   updated_at: string;
 }
 
@@ -163,7 +164,7 @@ export const walrusAPI = {
    * Update (or create) command overrides for a device.
    */
   setDeviceCommands: async (
-    patch: Partial<Pick<DeviceCommands, 'sleep' | 'intake_pump_override' | 'collect_pump_override' | 'mist_override'>>,
+    patch: Partial<Pick<DeviceCommands, 'sleep' | 'intake_pump_override' | 'collect_pump_override' | 'mist_override' | 'peltier_override'>>,
     deviceId: string = DEFAULT_DEVICE_ID
   ): Promise<DeviceCommands | null> => {
     const { data, error } = await supabase
