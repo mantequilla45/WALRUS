@@ -1,14 +1,18 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ScrollView, View, Text, StyleSheet, RefreshControl, Animated, Easing, Pressable, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { walrusAPI, type SensorReading, type DeviceCommands, type Override } from '@/services/api';
 import { computeDeviceStatus } from '@/services/deviceStatus';
+import { useTheme, type Theme } from '@/contexts/theme';
 
 type FocusKey = 'tds' | 'clean_level' | 'basin_temp' | 'activations';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
+
   const [data, setData] = useState<SensorReading | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -18,8 +22,8 @@ export default function HomeScreen() {
 
   // Tick every 5s so "X ago" labels and offline detection stay current
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
+    const intv = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(intv);
   }, []);
 
   const goToAnalytics = (focus: FocusKey) =>
@@ -94,7 +98,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <View style={styles.loadingIcon}>
-          <Ionicons name="water" size={32} color="#007AFF" />
+          <Ionicons name="water" size={32} color={t.accent} />
         </View>
         <Text style={styles.loadingTitle}>WALRUS</Text>
         <Text style={styles.loadingSubtitle}>Water Purification System</Text>
@@ -154,7 +158,7 @@ export default function HomeScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.accent} />
       }
       bounces
       alwaysBounceVertical
@@ -180,8 +184,8 @@ export default function HomeScreen() {
           pressed && { opacity: 0.85 },
         ]}
       >
-        <View style={[styles.powerIcon, { backgroundColor: isSleeping ? '#FFEBEB' : '#E8F8ED' }]}>
-          <Ionicons name="power" size={22} color={isSleeping ? '#FF3B30' : '#34C759'} />
+        <View style={[styles.powerIcon, { backgroundColor: isSleeping ? t.dangerSoft : t.successSoft }]}>
+          <Ionicons name="power" size={22} color={isSleeping ? t.danger : t.success} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.powerTitle}>{isSleeping ? 'Device is off' : 'Device is on'}</Text>
@@ -189,11 +193,7 @@ export default function HomeScreen() {
             {isSleeping ? 'Tap to turn on' : 'Tap to turn off'}
           </Text>
         </View>
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color="#C7C7CC"
-        />
+        <Ionicons name="chevron-forward" size={18} color={t.chevron} />
       </Pressable>
 
       {/* ── Water Quality ── */}
@@ -205,11 +205,11 @@ export default function HomeScreen() {
           style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
         >
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: '#EBF5FF' }]}>
-              <MaterialCommunityIcons name="water-check" size={16} color="#007AFF" />
+            <View style={[styles.metricIcon, { backgroundColor: t.accentSoft }]}>
+              <MaterialCommunityIcons name="water-check" size={16} color={t.accent} />
             </View>
             <Text style={styles.metricLabel}>Purity (TDS)</Text>
-            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
+            {!offline && <Ionicons name="chevron-forward" size={14} color={t.chevron} />}
           </View>
           <Text style={[styles.metricValue, (offline || tdsMissing) && styles.valueOff]}>
             {offline ? 0 : tdsMissing ? 0 : tds}
@@ -228,11 +228,11 @@ export default function HomeScreen() {
           style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
         >
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: '#E8F4FD' }]}>
-              <Ionicons name="water-outline" size={16} color="#5AC8FA" />
+            <View style={[styles.metricIcon, { backgroundColor: t.cyanSoft }]}>
+              <Ionicons name="water-outline" size={16} color={t.cyan} />
             </View>
             <Text style={styles.metricLabel}>Clean Level</Text>
-            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
+            {!offline && <Ionicons name="chevron-forward" size={14} color={t.chevron} />}
           </View>
           <Text style={[styles.metricValue, (offline || cleanMissing) && styles.valueOff]}>
             {offline ? '0.0' : cleanMissing ? '0.0' : cleanLevel.toFixed(1)}
@@ -255,11 +255,11 @@ export default function HomeScreen() {
           style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
         >
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: '#FFF3E0' }]}>
-              <Ionicons name="flame" size={16} color="#FF9500" />
+            <View style={[styles.metricIcon, { backgroundColor: t.warningSoft }]}>
+              <Ionicons name="flame" size={16} color={t.warning} />
             </View>
             <Text style={styles.metricLabel}>Basin Temp</Text>
-            {!offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
+            {!offline && <Ionicons name="chevron-forward" size={14} color={t.chevron} />}
           </View>
           <Text style={[styles.metricValue, (offline || basinMissing) && styles.valueOff]}>
             {offline ? '0.0°' : basinMissing ? '0.0°' : `${basin.toFixed(1)}°`}
@@ -274,11 +274,11 @@ export default function HomeScreen() {
 
         <View style={[styles.metricCard, offline && styles.metricCardOffline]}>
           <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: offline ? '#F2F2F7' : (floatOk ? '#E8F8ED' : '#FFEBEB') }]}>
+            <View style={[styles.metricIcon, { backgroundColor: offline ? t.surfaceMuted : (floatOk ? t.successSoft : t.dangerSoft) }]}>
               <MaterialCommunityIcons
                 name={offline ? 'water-off' : (floatOk ? 'water' : 'water-off')}
                 size={16}
-                color={offline ? '#C7C7CC' : (floatOk ? '#34C759' : '#FF3B30')}
+                color={offline ? t.chevron : (floatOk ? t.success : t.danger)}
               />
             </View>
             <Text style={styles.metricLabel}>Float Switch</Text>
@@ -349,13 +349,14 @@ function ActuatorStatusCard({
   fullWidth?: boolean;
   onPress?: () => void;
 }) {
-  // Predict the state based on the override, so the user gets immediate feedback
-  // even though the device may take up to ~15s to actually apply it.
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
+
   const expected = override === 'on' ? true : override === 'off' ? false : active;
   const pending = override && override !== 'auto' && expected !== active;
 
-  const iconColor = offline ? '#C7C7CC' : active ? '#007AFF' : '#C7C7CC';
-  const iconBg = offline ? '#F2F2F7' : active ? '#EBF5FF' : '#F2F2F7';
+  const iconColor = offline ? t.chevron : active ? t.accent : t.chevron;
+  const iconBg = offline ? t.surfaceMuted : active ? t.accentSoft : t.surfaceMuted;
 
   const iconWrapper = animatedScale && !offline ? (
     <Animated.View style={{ transform: [{ scale: animatedScale }] }}>
@@ -377,7 +378,7 @@ function ActuatorStatusCard({
             <Text style={styles.overrideBadgeText}>{override.toUpperCase()}</Text>
           </View>
         )}
-        {onPress && !offline && <Ionicons name="chevron-forward" size={14} color="#C7C7CC" />}
+        {onPress && !offline && <Ionicons name="chevron-forward" size={14} color={t.chevron} />}
       </View>
       <Text style={[styles.metricValue, (offline || !active) && styles.valueOff]}>
         {offline ? 'OFF' : active ? 'ON' : 'OFF'}
@@ -386,7 +387,7 @@ function ActuatorStatusCard({
         <Text style={styles.metricSub}>No data</Text>
       ) : pending ? (
         <View style={styles.pendingRow}>
-          <Ionicons name="time-outline" size={11} color="#FF9500" />
+          <Ionicons name="time-outline" size={11} color={t.warning} />
           <Text style={styles.pendingText}>Pending — applies on next sync</Text>
         </View>
       ) : (
@@ -416,6 +417,8 @@ function ActuatorStatusCard({
 }
 
 function StatusPill({ status }: { status: ReturnType<typeof computeDeviceStatus> }) {
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
   return (
     <View style={[styles.statusPill, { backgroundColor: status.bgColor }]}>
       <Ionicons name={status.iconName as any} size={14} color={status.color} />
@@ -429,90 +432,92 @@ function StatusPill({ status }: { status: ReturnType<typeof computeDeviceStatus>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA' },
-  centered: { alignItems: 'center', justifyContent: 'center' },
-  content: { paddingBottom: 34 },
+function createStyles(t: Theme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: t.bg },
+    centered: { alignItems: 'center', justifyContent: 'center' },
+    content: { paddingBottom: 34 },
 
-  loadingIcon: {
-    width: 60, height: 60, borderRadius: 16, backgroundColor: '#EBF5FF',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-  },
-  loadingTitle: { fontSize: 22, fontWeight: '700', color: '#1C1C1E', letterSpacing: 1.5 },
-  loadingSubtitle: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
-  errorText: { fontSize: 13, color: '#FF3B30', fontWeight: '500', marginTop: 20 },
-  connectingText: { fontSize: 13, color: '#007AFF', marginTop: 20 },
+    loadingIcon: {
+      width: 60, height: 60, borderRadius: 16, backgroundColor: t.accentSoft,
+      alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+    },
+    loadingTitle: { fontSize: 22, fontWeight: '700', color: t.textPrimary, letterSpacing: 1.5 },
+    loadingSubtitle: { fontSize: 13, color: t.textSecondary, marginTop: 4 },
+    errorText: { fontSize: 13, color: t.danger, fontWeight: '500', marginTop: 20 },
+    connectingText: { fontSize: 13, color: t.accent, marginTop: 20 },
 
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: 20, paddingTop: 60, paddingBottom: 2,
-  },
-  greeting: { fontSize: 32, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.5 },
+    header: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+      paddingHorizontal: 20, paddingTop: 60, paddingBottom: 2,
+    },
+    greeting: { fontSize: 32, fontWeight: '700', color: t.textPrimary, letterSpacing: -0.5 },
 
-  timestamp: { fontSize: 12, color: '#AEAEB2', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 6 },
+    timestamp: { fontSize: 12, color: t.textTertiary, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 6 },
 
-  sectionLabel: {
-    fontSize: 16, fontWeight: '600', color: '#1C1C1E',
-    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10,
-  },
-  row: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 4 },
+    sectionLabel: {
+      fontSize: 16, fontWeight: '600', color: t.textPrimary,
+      paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10,
+    },
+    row: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 10 },
 
-  metricCard: {
-    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-  },
-  metricHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  metricIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  metricLabel: { fontSize: 13, fontWeight: '500', color: '#8E8E93', flex: 1 },
-  metricValue: {
-    fontSize: 26, fontWeight: '700', color: '#1C1C1E',
-    fontVariant: ['tabular-nums'], letterSpacing: -0.5, marginBottom: 4,
-  },
-  valueOff: { color: '#C7C7CC' },
-  metricSub: { fontSize: 12, fontWeight: '500', color: '#AEAEB2' },
-  subPositive: { color: '#34C759' },
-  subWarning: { color: '#FF9F0A' },
+    metricCard: {
+      flex: 1, backgroundColor: t.cardBg, borderRadius: 16, padding: 16,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: t.isDark ? 0.2 : 0.04, shadowRadius: 12, elevation: 2,
+    },
+    metricHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+    metricIcon: {
+      width: 32, height: 32, borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    metricLabel: { fontSize: 13, fontWeight: '500', color: t.textSecondary, flex: 1 },
+    metricValue: {
+      fontSize: 26, fontWeight: '700', color: t.textPrimary,
+      fontVariant: ['tabular-nums'], letterSpacing: -0.5, marginBottom: 4,
+    },
+    valueOff: { color: t.chevron },
+    metricSub: { fontSize: 12, fontWeight: '500', color: t.textTertiary },
+    subPositive: { color: t.success },
+    subWarning: { color: t.warning },
 
-  overrideBadge: {
-    backgroundColor: '#FF9500', borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
-  overrideBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
-  pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  pendingText: { fontSize: 12, fontWeight: '500', color: '#FF9500' },
+    overrideBadge: {
+      backgroundColor: t.warning, borderRadius: 6,
+      paddingHorizontal: 6, paddingVertical: 2,
+    },
+    overrideBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+    pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    pendingText: { fontSize: 12, fontWeight: '500', color: t.warning },
 
-  metricCardPressed: { opacity: 0.7 },
-  metricCardOffline: { opacity: 0.55 },
+    metricCardPressed: { opacity: 0.7 },
+    metricCardOffline: { opacity: 0.55 },
 
-  // Power toggle card
-  powerCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: 16, marginTop: 10, marginBottom: 4,
-    padding: 16,
-    backgroundColor: '#FFFFFF', borderRadius: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-  },
-  powerCardOff: {
-    backgroundColor: '#F8F8FA',
-  },
-  powerIcon: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  powerTitle: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
-  powerSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+    // Power toggle card
+    powerCard: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      marginHorizontal: 16, marginTop: 10, marginBottom: 4,
+      padding: 16,
+      backgroundColor: t.cardBg, borderRadius: 16,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: t.isDark ? 0.2 : 0.04, shadowRadius: 12, elevation: 2,
+    },
+    powerCardOff: {
+      backgroundColor: t.surfaceMuted,
+    },
+    powerIcon: {
+      width: 44, height: 44, borderRadius: 12,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    powerTitle: { fontSize: 15, fontWeight: '600', color: t.textPrimary },
+    powerSub: { fontSize: 12, color: t.textSecondary, marginTop: 2 },
 
-  // Status pill (composite device status in header)
-  statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-    maxWidth: 180,
-  },
-  statusLabel: { fontSize: 13, fontWeight: '700' },
-  statusDetail: { fontSize: 10, fontWeight: '500', opacity: 0.8 },
-});
+    // Status pill (composite device status in header)
+    statusPill: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
+      maxWidth: 180,
+    },
+    statusLabel: { fontSize: 13, fontWeight: '700' },
+    statusDetail: { fontSize: 10, fontWeight: '500', opacity: 0.8 },
+  });
+}

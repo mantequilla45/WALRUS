@@ -4,6 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { walrusAPI, type SensorReading } from '@/services/api';
+import { useTheme, type Theme } from '@/contexts/theme';
 
 type Range = '24h' | '7d' | '30d';
 const RANGES: Range[] = ['24h', '7d', '30d'];
@@ -13,31 +14,42 @@ type FocusKey = 'tds' | 'clean_level' | 'basin_temp' | 'activations';
 const screenW = Dimensions.get('window').width;
 const chartW = screenW - 32; // 16px margin each side
 
-const chartConfig = {
-  backgroundGradientFrom: '#FFFFFF',
-  backgroundGradientFromOpacity: 1,
-  backgroundGradientTo: '#FFFFFF',
-  backgroundGradientToOpacity: 1,
-  color:       (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-  labelColor:  (opacity = 1) => `rgba(60, 60, 67, ${opacity * 0.6})`,
-  propsForDots: { r: '0' },
-  propsForBackgroundLines: { stroke: '#F2F2F7' },
-  strokeWidth: 2,
-  decimalPlaces: 1,
-};
-
-const barChartConfig = {
-  ...chartConfig,
-  color: (opacity = 1) => `rgba(52, 199, 89, ${opacity})`,
-  decimalPlaces: 0,
-  barPercentage: 0.7,
-};
+function buildChartConfig(t: Theme, accentRgb: string) {
+  const labelRgb = t.isDark ? '235, 235, 245' : '60, 60, 67';
+  const bg = t.cardBg;
+  return {
+    paddingRight: 24,
+    backgroundGradientFrom: bg,
+    backgroundGradientFromOpacity: 1,
+    backgroundGradientTo: bg,
+    backgroundGradientToOpacity: 1,
+    color:       (opacity = 1) => `rgba(${accentRgb}, ${opacity})`,
+    labelColor:  (opacity = 1) => `rgba(${labelRgb}, ${opacity * 0.6})`,
+    propsForDots: { r: '0' },
+    propsForBackgroundLines: { stroke: t.surfaceMuted },
+    strokeWidth: 2,
+    decimalPlaces: 1,
+  };
+}
 
 export default function AnalyticsScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
   const params = useLocalSearchParams<{ focus?: FocusKey }>();
   const [range, setRange] = useState<Range>('24h');
   const [rows, setRows] = useState<SensorReading[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Convert hex theme tokens to rgb tuples for chart-kit (which wants `rgba(...)` strings)
+  const accentRgb  = t.isDark ? '10, 132, 255'  : '0, 122, 255';
+  const warningRgb = t.isDark ? '255, 159, 10'  : '255, 149, 0';
+  const purpleRgb  = t.isDark ? '94, 92, 230'   : '88, 86, 214';
+  const successRgb = t.isDark ? '48, 209, 88'   : '52, 199, 89';
+
+  const lineConfig = useMemo(() => buildChartConfig(t, accentRgb), [t, accentRgb]);
+  const tempConfig = useMemo(() => ({ ...buildChartConfig(t, warningRgb) }), [t, warningRgb]);
+  const tdsConfig  = useMemo(() => ({ ...buildChartConfig(t, purpleRgb), decimalPlaces: 0 }), [t, purpleRgb]);
+  const barConfig  = useMemo(() => ({ ...buildChartConfig(t, successRgb), decimalPlaces: 0, barPercentage: 0.7 }), [t, successRgb]);
 
   const scrollRef = useRef<ScrollView>(null);
   const chartYs = useRef<Partial<Record<FocusKey, number>>>({});
@@ -101,11 +113,11 @@ export default function AnalyticsScreen() {
 
       {loading ? (
         <View style={styles.loadingBox}>
-          <ActivityIndicator color="#007AFF" />
+          <ActivityIndicator color={t.accent} />
         </View>
       ) : rows.length < 2 ? (
         <View style={styles.emptyBox}>
-          <Ionicons name="analytics-outline" size={32} color="#C7C7CC" />
+          <Ionicons name="analytics-outline" size={32} color={t.chevron} />
           <Text style={styles.emptyText}>Not enough data yet</Text>
           <Text style={styles.emptySub}>Once the device has been running, charts will appear here.</Text>
         </View>
@@ -114,16 +126,16 @@ export default function AnalyticsScreen() {
           <View style={styles.summaryRow}>
             <SummaryCard
               icon="water"
-              iconBg="#EBF5FF"
-              iconColor="#007AFF"
+              iconBg={t.accentSoft}
+              iconColor={t.accent}
               label="Water Collected"
               value={`${metrics.waterCollectedCm.toFixed(1)} cm`}
               hint="≈ ? L"
             />
             <SummaryCard
               icon="repeat"
-              iconBg="#E8F8ED"
-              iconColor="#34C759"
+              iconBg={t.successSoft}
+              iconColor={t.success}
               label="Pump Cycles"
               value={`${metrics.intakeCycles + metrics.collectCycles}`}
               hint={`${metrics.intakeCycles} in · ${metrics.collectCycles} out`}
@@ -132,16 +144,16 @@ export default function AnalyticsScreen() {
           <View style={styles.summaryRow}>
             <SummaryCard
               icon="cloudy"
-              iconBg="#F0F4FF"
-              iconColor="#5856D6"
+              iconBg={t.purpleSoft}
+              iconColor={t.purple}
               label="Mister Runtime"
               value={formatMinutes(metrics.mistRuntimeMs)}
               hint={`${metrics.mistCycles} starts`}
             />
             <SummaryCard
               icon="flame"
-              iconBg="#FFF3E0"
-              iconColor="#FF9500"
+              iconBg={t.warningSoft}
+              iconColor={t.warning}
               label="Peak Basin"
               value={`${metrics.peakBasin.toFixed(1)}°`}
               hint={`Avg ${metrics.avgBasin.toFixed(1)}°`}
@@ -150,16 +162,16 @@ export default function AnalyticsScreen() {
           <View style={styles.summaryRow}>
             <SummaryCard
               icon="sparkles"
-              iconBg="#EBF5FF"
-              iconColor="#007AFF"
+              iconBg={t.accentSoft}
+              iconColor={t.accent}
               label="Avg Purity"
               value={`${Math.round(metrics.avgTds)} ppm`}
               hint={`Range ${Math.round(metrics.minTds)}–${Math.round(metrics.maxTds)}`}
             />
             <SummaryCard
               icon="time"
-              iconBg="#F2F2F7"
-              iconColor="#8E8E93"
+              iconBg={t.surfaceMuted}
+              iconColor={t.textSecondary}
               label="Samples"
               value={`${rows.length}`}
               hint={`${range} window`}
@@ -177,10 +189,12 @@ export default function AnalyticsScreen() {
                 data={{ labels: levelSeries.labels, datasets: [{ data: levelSeries.data }] }}
                 width={chartW}
                 height={180}
-                chartConfig={chartConfig}
+                chartConfig={lineConfig}
                 bezier
                 withInnerLines
                 withOuterLines={false}
+                verticalLabelRotation={range === '30d' ? 30 : 0}
+                xLabelsOffset={range === '30d' ? -6 : 0}
                 style={styles.chart}
               />
             </ChartCard>
@@ -197,13 +211,12 @@ export default function AnalyticsScreen() {
                 data={{ labels: tempSeries.labels, datasets: [{ data: tempSeries.data }] }}
                 width={chartW}
                 height={180}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(255, 149, 0, ${opacity})`,
-                }}
+                chartConfig={tempConfig}
                 bezier
                 withInnerLines
                 withOuterLines={false}
+                verticalLabelRotation={range === '30d' ? 30 : 0}
+                xLabelsOffset={range === '30d' ? -6 : 0}
                 style={styles.chart}
               />
             </ChartCard>
@@ -220,14 +233,12 @@ export default function AnalyticsScreen() {
                 data={{ labels: tdsSeries.labels, datasets: [{ data: tdsSeries.data }] }}
                 width={chartW}
                 height={180}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(88, 86, 214, ${opacity})`,
-                  decimalPlaces: 0,
-                }}
+                chartConfig={tdsConfig}
                 bezier
                 withInnerLines
                 withOuterLines={false}
+                verticalLabelRotation={range === '30d' ? 30 : 0}
+                xLabelsOffset={range === '30d' ? -6 : 0}
                 style={styles.chart}
               />
             </ChartCard>
@@ -244,10 +255,12 @@ export default function AnalyticsScreen() {
                 data={{ labels: activations.labels, datasets: [{ data: activations.data }] }}
                 width={chartW}
                 height={180}
-                chartConfig={barChartConfig}
+                chartConfig={barConfig}
                 fromZero
                 withInnerLines
                 showValuesOnTopOfBars={false}
+                verticalLabelRotation={range === '30d' ? 30 : 0}
+                xLabelsOffset={range === '30d' ? -6 : 0}
                 style={styles.chart}
                 yAxisLabel=""
                 yAxisSuffix=""
@@ -348,22 +361,35 @@ function downsample(
   key: keyof Pick<SensorReading, 'clean_level_cm' | 'basin_temp' | 'tds_ppm'>,
   range: Range
 ): { labels: string[]; data: number[] } {
-  const targetPoints = range === '24h' ? 24 : range === '7d' ? 14 : 30;
   if (rows.length === 0) return { labels: [], data: [] };
 
-  const bucketSize = Math.max(1, Math.floor(rows.length / targetPoints));
-  const out: { labels: string[]; data: number[] } = { labels: [], data: [] };
+  // Bucket by actual time (hour for 24h, day for 7d/30d) so labels never duplicate.
+  const bucketMs = range === '24h' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
-  for (let i = 0; i < rows.length; i += bucketSize) {
-    const slice = rows.slice(i, i + bucketSize);
-    const vals = slice.map(r => r[key]).filter((v): v is number => v !== null);
-    if (vals.length === 0) continue;
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    out.data.push(Number(avg.toFixed(1)));
-    out.labels.push(formatLabel(slice[Math.floor(slice.length / 2)].created_at, range));
+  type Bucket = { sum: number; count: number; ts: number };
+  const buckets = new Map<number, Bucket>();
+
+  for (const r of rows) {
+    const v = r[key];
+    if (v === null) continue;
+    const ts = new Date(r.created_at).getTime();
+    const idx = Math.floor(ts / bucketMs);
+    const existing = buckets.get(idx);
+    if (existing) {
+      existing.sum += v;
+      existing.count++;
+    } else {
+      buckets.set(idx, { sum: v, count: 1, ts: idx * bucketMs });
+    }
   }
 
-  return sparsifyLabels(out, 6);
+  const sorted = [...buckets.values()].sort((a, b) => a.ts - b.ts);
+  const out = {
+    labels: sorted.map((b) => formatLabel(new Date(b.ts).toISOString(), range)),
+    data:   sorted.map((b) => Number((b.sum / b.count).toFixed(1))),
+  };
+
+  return sparsifyLabels(out, range === '30d' ? 7 : range === '24h' ? 6 : 7);
 }
 
 function activationsByBucket(rows: SensorReading[], range: Range): { labels: string[]; data: number[] } {
@@ -392,7 +418,7 @@ function activationsByBucket(rows: SensorReading[], range: Range): { labels: str
   }
 
   const out = { labels: seen, data: seen.map(k => buckets.get(k) || 0) };
-  return sparsifyLabels(out, 6);
+  return sparsifyLabels(out, range === '30d' ? 7 : range === '24h' ? 6 : 7);
 }
 
 function sparsifyLabels(
@@ -401,14 +427,18 @@ function sparsifyLabels(
 ): { labels: string[]; data: number[] } {
   if (series.labels.length <= maxLabels) return series;
   const step = Math.ceil(series.labels.length / maxLabels);
-  const labels = series.labels.map((l, i) => (i % step === 0 ? l : ''));
+  // Anchor on the LAST point so the most-recent label always shows
+  const lastIdx = series.labels.length - 1;
+  const labels = series.labels.map((l, i) =>
+    (lastIdx - i) % step === 0 ? l : ''
+  );
   return { labels, data: series.data };
 }
 
 function formatLabel(iso: string, range: Range): string {
   const d = new Date(iso);
   const pad = (n: number) => `${n}`.padStart(2, '0');
-  if (range === '24h') return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (range === '24h') return `${pad(d.getHours())}h`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
@@ -434,6 +464,8 @@ function SummaryCard({
   value: string;
   hint?: string;
 }) {
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
   return (
     <View style={styles.summaryCard}>
       <View style={styles.summaryHeader}>
@@ -461,6 +493,8 @@ function ChartCard({
   focused?: boolean;
   onLayoutY?: (y: number) => void;
 }) {
+  const t = useTheme();
+  const styles = useMemo(() => createStyles(t), [t]);
   return (
     <View
       onLayout={(e) => onLayoutY?.(e.nativeEvent.layout.y)}
@@ -473,71 +507,73 @@ function ChartCard({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA' },
-  content: { paddingBottom: 34 },
+function createStyles(t: Theme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: t.bg },
+    content: { paddingBottom: 34 },
 
-  title: {
-    fontSize: 32, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.5,
-    paddingHorizontal: 20, paddingTop: 60,
-  },
-  subtitle: {
-    fontSize: 13, color: '#8E8E93',
-    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16,
-  },
+    title: {
+      fontSize: 32, fontWeight: '700', color: t.textPrimary, letterSpacing: -0.5,
+      paddingHorizontal: 20, paddingTop: 60,
+    },
+    subtitle: {
+      fontSize: 13, color: t.textSecondary,
+      paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16,
+    },
 
-  rangeGroup: {
-    flexDirection: 'row',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 999, padding: 3,
-    marginHorizontal: 16, marginBottom: 16,
-    alignSelf: 'flex-start',
-  },
-  rangePill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999 },
-  rangePillActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 2, elevation: 1,
-  },
-  rangeText: { fontSize: 13, fontWeight: '600', color: '#8E8E93' },
-  rangeTextActive: { color: '#1C1C1E' },
+    rangeGroup: {
+      flexDirection: 'row',
+      backgroundColor: t.pillTrack,
+      borderRadius: 999, padding: 3,
+      marginHorizontal: 16, marginBottom: 16,
+      alignSelf: 'flex-start',
+    },
+    rangePill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999 },
+    rangePillActive: {
+      backgroundColor: t.pillThumbActive,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: t.isDark ? 0.3 : 0.06, shadowRadius: 2, elevation: 1,
+    },
+    rangeText: { fontSize: 13, fontWeight: '600', color: t.textSecondary },
+    rangeTextActive: { color: t.textPrimary },
 
-  loadingBox: { paddingVertical: 60, alignItems: 'center' },
+    loadingBox: { paddingVertical: 60, alignItems: 'center' },
 
-  emptyBox: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
-  emptyText: { fontSize: 15, fontWeight: '600', color: '#1C1C1E', marginTop: 12 },
-  emptySub: { fontSize: 13, color: '#8E8E93', textAlign: 'center', marginTop: 6 },
+    emptyBox: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
+    emptyText: { fontSize: 15, fontWeight: '600', color: t.textPrimary, marginTop: 12 },
+    emptySub: { fontSize: 13, color: t.textSecondary, textAlign: 'center', marginTop: 6 },
 
-  summaryRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 10 },
-  summaryCard: {
-    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-  },
-  summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  summaryIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  summaryLabel: { fontSize: 13, fontWeight: '500', color: '#8E8E93', flex: 1 },
-  summaryValue: {
-    fontSize: 22, fontWeight: '700', color: '#1C1C1E',
-    fontVariant: ['tabular-nums'], letterSpacing: -0.5, marginBottom: 2,
-  },
-  summaryHint: { fontSize: 11, fontWeight: '500', color: '#AEAEB2' },
+    summaryRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 10 },
+    summaryCard: {
+      flex: 1, backgroundColor: t.cardBg, borderRadius: 16, padding: 16,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: t.isDark ? 0.2 : 0.04, shadowRadius: 12, elevation: 2,
+    },
+    summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+    summaryIcon: {
+      width: 32, height: 32, borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    summaryLabel: { fontSize: 13, fontWeight: '500', color: t.textSecondary, flex: 1 },
+    summaryValue: {
+      fontSize: 22, fontWeight: '700', color: t.textPrimary,
+      fontVariant: ['tabular-nums'], letterSpacing: -0.5, marginBottom: 2,
+    },
+    summaryHint: { fontSize: 11, fontWeight: '500', color: t.textTertiary },
 
-  chartCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16,
-    marginHorizontal: 16, marginTop: 12, paddingTop: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-    overflow: 'hidden',
-  },
-  chartCardFocused: {
-    borderWidth: 2,
-    borderColor: '#007AFF',
-  },
-  chartTitle: { fontSize: 15, fontWeight: '600', color: '#1C1C1E', paddingHorizontal: 16 },
-  chartSubtitle: { fontSize: 12, color: '#8E8E93', paddingHorizontal: 16, paddingTop: 2, paddingBottom: 8 },
-  chart: { marginLeft: -16, marginRight: 0 },
-});
+    chartCard: {
+      backgroundColor: t.cardBg, borderRadius: 16,
+      marginHorizontal: 16, marginTop: 12, paddingTop: 16,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: t.isDark ? 0.2 : 0.04, shadowRadius: 12, elevation: 2,
+      overflow: 'hidden',
+    },
+    chartCardFocused: {
+      borderWidth: 2,
+      borderColor: t.accent,
+    },
+    chartTitle: { fontSize: 15, fontWeight: '600', color: t.textPrimary, paddingHorizontal: 16 },
+    chartSubtitle: { fontSize: 12, color: t.textSecondary, paddingHorizontal: 16, paddingTop: 2, paddingBottom: 8 },
+    chart: { marginLeft: -16, marginRight: 0 },
+  });
+}

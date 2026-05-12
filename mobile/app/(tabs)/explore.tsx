@@ -1,61 +1,53 @@
-import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme, useThemeMode, type ThemeMode } from '@/contexts/theme';
 
-const REFRESH_KEY = 'walrus_refresh_rate';
-const REFRESH_OPTIONS = [
-  { label: '3s', value: 3000 },
-  { label: '5s', value: 5000 },
-  { label: '10s', value: 10000 },
-  { label: '30s', value: 30000 },
+const THEME_OPTIONS: { label: string; value: ThemeMode; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { label: 'System', value: 'system', icon: 'phone-portrait-outline' },
+  { label: 'Light',  value: 'light',  icon: 'sunny-outline' },
+  { label: 'Dark',   value: 'dark',   icon: 'moon-outline' },
 ];
-const DEFAULT_REFRESH = 5000;
 
 export default function SettingsScreen() {
-  const [refreshRate, setRefreshRate] = useState(DEFAULT_REFRESH);
-
-  useEffect(() => {
-    AsyncStorage.getItem(REFRESH_KEY).then((val: string | null) => {
-      if (val) setRefreshRate(parseInt(val, 10));
-    });
-  }, []);
-
-  const selectRate = async (value: number) => {
-    setRefreshRate(value);
-    await AsyncStorage.setItem(REFRESH_KEY, value.toString());
-  };
+  const t = useTheme();
+  const { mode, setMode } = useThemeMode();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Settings</Text>
-      <Text style={styles.subtitle}>App preferences and device info</Text>
+    <ScrollView style={[styles.container, { backgroundColor: t.bg }]} contentContainerStyle={styles.content}>
+      <Text style={[styles.title, { color: t.textPrimary }]}>Settings</Text>
+      <Text style={[styles.subtitle, { color: t.textSecondary }]}>App preferences and device info</Text>
 
-      {/* ── Refresh Rate ── */}
-      <Text style={styles.sectionLabel}>Refresh Rate</Text>
-      <View style={styles.card}>
+      {/* ── Appearance ── */}
+      <Text style={[styles.sectionLabel, { color: t.textPrimary }]}>Appearance</Text>
+      <View style={[styles.card, { backgroundColor: t.cardBg }]}>
         <View style={styles.cardHeader}>
-          <View style={[styles.iconWrap, { backgroundColor: '#EBF5FF' }]}>
-            <Ionicons name="timer-outline" size={16} color="#007AFF" />
+          <View style={[styles.iconWrap, { backgroundColor: t.purpleSoft }]}>
+            <Ionicons name="contrast" size={16} color={t.purple} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>How often to fetch</Text>
-            <Text style={styles.cardSubtitle}>
-              Lower = more responsive, slightly more battery.
+            <Text style={[styles.cardTitle, { color: t.textPrimary }]}>Theme</Text>
+            <Text style={[styles.cardSubtitle, { color: t.textSecondary }]}>
+              System matches your device. Light or Dark forces a fixed theme.
             </Text>
           </View>
         </View>
 
-        <View style={styles.pillGroup}>
-          {REFRESH_OPTIONS.map((opt) => {
-            const active = refreshRate === opt.value;
+        <View style={[styles.pillGroup, { backgroundColor: t.pillTrack }]}>
+          {THEME_OPTIONS.map((opt) => {
+            const active = mode === opt.value;
             return (
               <Pressable
                 key={opt.value}
-                onPress={() => selectRate(opt.value)}
-                style={[styles.pill, active && styles.pillActive]}
+                onPress={() => setMode(opt.value)}
+                style={[styles.pill, active && { backgroundColor: t.pillThumbActive }]}
               >
-                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                <Ionicons
+                  name={opt.icon}
+                  size={14}
+                  color={active ? t.accent : t.textSecondary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.pillText, { color: active ? t.accent : t.textSecondary }]}>
                   {opt.label}
                 </Text>
               </Pressable>
@@ -65,8 +57,8 @@ export default function SettingsScreen() {
       </View>
 
       {/* ── About ── */}
-      <Text style={styles.sectionLabel}>About</Text>
-      <View style={styles.card}>
+      <Text style={[styles.sectionLabel, { color: t.textPrimary }]}>About</Text>
+      <View style={[styles.card, { backgroundColor: t.cardBg }]}>
         <Row label="App version" value="1.0.0" />
         <Divider />
         <Row label="Device ID" value="WALRUS_001" />
@@ -80,105 +72,59 @@ export default function SettingsScreen() {
 }
 
 function Row({ label, value }: { label: string; value: string }) {
+  const t = useTheme();
   return (
     <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      <Text style={[styles.rowLabel, { color: t.textSecondary }]}>{label}</Text>
+      <Text style={[styles.rowValue, { color: t.textPrimary }]}>{value}</Text>
     </View>
   );
 }
 
 function Divider() {
-  return <View style={styles.divider} />;
+  const t = useTheme();
+  return <View style={[styles.divider, { backgroundColor: t.surfaceMuted }]} />;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA' },
+  container: { flex: 1 },
   content: { paddingBottom: 34 },
 
   title: {
-    fontSize: 32, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.5,
+    fontSize: 32, fontWeight: '700', letterSpacing: -0.5,
     paddingHorizontal: 20, paddingTop: 60,
   },
   subtitle: {
-    fontSize: 13, color: '#8E8E93',
-    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
+    fontSize: 13, paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
   },
 
   sectionLabel: {
-    fontSize: 16, fontWeight: '600', color: '#1C1C1E',
+    fontSize: 16, fontWeight: '600',
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10,
   },
 
-  // Card
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginHorizontal: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    borderRadius: 16, marginHorizontal: 16, padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   iconWrap: {
     width: 36, height: 36, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  cardTitle: {
-    fontSize: 15, fontWeight: '600', color: '#1C1C1E',
-  },
-  cardSubtitle: {
-    fontSize: 12, color: '#8E8E93', marginTop: 2,
-  },
+  cardTitle: { fontSize: 15, fontWeight: '600' },
+  cardSubtitle: { fontSize: 12, marginTop: 2 },
 
-  // Pill group
-  pillGroup: {
-    flexDirection: 'row',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
-  },
+  pillGroup: { flexDirection: 'row', borderRadius: 12, padding: 4, gap: 4 },
   pill: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderRadius: 8,
   },
-  pillActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  pillText: {
-    fontSize: 14, fontWeight: '600', color: '#8E8E93',
-  },
-  pillTextActive: {
-    color: '#007AFF',
-  },
+  pillText: { fontSize: 13, fontWeight: '600' },
 
-  // About rows
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  rowLabel: { fontSize: 14, color: '#8E8E93' },
-  rowValue: { fontSize: 14, fontWeight: '500', color: '#1C1C1E' },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E5E5EA',
-  },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+  rowLabel: { fontSize: 14 },
+  rowValue: { fontSize: 14, fontWeight: '500' },
+  divider: { height: StyleSheet.hairlineWidth },
 });

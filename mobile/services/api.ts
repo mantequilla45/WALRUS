@@ -94,20 +94,36 @@ export const walrusAPI = {
     const since = new Date(Date.now() - durationMap[duration]).toISOString();
 
     try {
-      const query = supabase
-        .from('sensor_readings')
-        .select('*')
-        .eq('device_id', deviceId)
-        .gte('created_at', since)
-        .order('created_at', { ascending: true });
+      // Seek-based pagination: walk forward in `created_at` order. Each page is
+      // its own self-contained SELECT, so Supabase's max_rows cap on offset
+      // queries doesn't apply.
+      const PAGE = 1000;
+      const MAX_PAGES = 50; // safety ceiling = 50K rows
+      const all: SensorReading[] = [];
+      let cursor = since; // start at the "since" boundary, exclusive
 
-      const { data, error } = await query;
+      for (let p = 0; p < MAX_PAGES; p++) {
+        const { data, error } = await supabase
+          .from('sensor_readings')
+          .select('*')
+          .eq('device_id', deviceId)
+          .gt('created_at', cursor)
+          .order('created_at', { ascending: true })
+          .limit(PAGE);
 
-      if (error) {
-        return { success: false, data: [], count: 0 };
+        if (error) {
+          console.error('[API] getHistory page error:', error.message);
+          return { success: false, data: [], count: 0 };
+        }
+        console.log(`[API] getHistory page ${p}: ${data?.length ?? 0} rows from cursor ${cursor}`);
+        if (!data || data.length === 0) break;
+        all.push(...(data as SensorReading[]));
+        if (data.length < PAGE) break; // last page
+        cursor = data[data.length - 1].created_at;
       }
 
-      return { success: true, data: data || [], count: data?.length || 0 };
+      console.log(`[API] getHistory ${duration} for ${deviceId}: ${all.length} rows`);
+      return { success: true, data: all, count: all.length };
     } catch {
       return { success: false, data: [], count: 0 };
     }

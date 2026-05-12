@@ -9,9 +9,7 @@ import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-
-const ACTIVE_COLOR = '#007AFF';
-const INACTIVE_COLOR = '#8E8E93';
+import { useTheme } from '@/contexts/theme';
 
 const { Navigator } = createMaterialTopTabNavigator();
 const MaterialTopTabs: any = withLayoutContext(Navigator);
@@ -24,8 +22,11 @@ const ICONS: Record<string, React.ComponentProps<typeof IconSymbol>['name']> = {
 };
 
 function BottomTabBar({ state, descriptors, navigation, position }: MaterialTopTabBarProps) {
+  const t = useTheme();
   const insets = useSafeAreaInsets();
   const [barWidth, setBarWidth] = useState(0);
+  const ACTIVE_COLOR = t.accent;
+  const INACTIVE_COLOR = t.textSecondary;
 
   const tabCount = state.routes.length;
   const tabWidth = barWidth / tabCount;
@@ -39,7 +40,14 @@ function BottomTabBar({ state, descriptors, navigation, position }: MaterialTopT
 
   return (
     <View
-      style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 6) }]}
+      style={[
+        styles.tabBar,
+        {
+          backgroundColor: t.tabBarBg,
+          borderTopColor: t.tabBarBorder,
+          paddingBottom: Math.max(insets.bottom, 6),
+        },
+      ]}
       onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
     >
       {/* Sliding pill behind active tab */}
@@ -49,6 +57,7 @@ function BottomTabBar({ state, descriptors, navigation, position }: MaterialTopT
           style={[
             styles.indicator,
             {
+              backgroundColor: t.accentSoft,
               width: tabWidth - 24,
               transform: [{ translateX: Animated.add(indicatorTranslateX, 12) }],
             },
@@ -122,11 +131,12 @@ function BottomTabBar({ state, descriptors, navigation, position }: MaterialTopT
 }
 
 export default function TabLayout() {
+  const t = useTheme();
   return (
     <MaterialTopTabs
       tabBarPosition="bottom"
       tabBar={(props: MaterialTopTabBarProps) => <BottomTabBar {...props} />}
-      sceneContainerStyle={{ backgroundColor: '#F5F6FA' }}
+      sceneContainerStyle={{ backgroundColor: t.bg }}
       screenOptions={{
         swipeEnabled: true,
         animationEnabled: true,
@@ -143,9 +153,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#D1D1D6',
     paddingTop: 6,
     position: 'relative',
   },
@@ -165,6 +173,5 @@ const styles = StyleSheet.create({
     left: 0,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#EBF5FF',
   },
 });
