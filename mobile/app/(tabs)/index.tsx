@@ -46,7 +46,7 @@ export default function HomeScreen() {
     } else {
       peltierPulse.setValue(0);
     }
-  }, [data?.peltier_active]);
+  }, [data?.peltier_active, peltierPulse]);
   const peltierScale = peltierPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
 
   const fetchData = useCallback(async () => {
@@ -59,7 +59,7 @@ export default function HomeScreen() {
       } else {
         setError(response.message || 'Waiting for first reading');
       }
-    } catch (e: any) {
+    } catch {
       setError('Cannot connect to database');
     }
   }, []);
