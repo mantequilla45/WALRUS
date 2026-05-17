@@ -19,13 +19,17 @@ export interface DeviceStatus {
   canOverride: boolean; // false = override won't apply meaningfully
 }
 
-const OFFLINE_THRESHOLD_MS = 30 * 1000;
-const ACTIVE_STATES = ['Distilling', 'Collecting', 'Refilling'];
+const DEFAULT_offlineThresholdMs = 30 * 1000;
+// Active states emitted by the ESP32 firmware (v12+).
+// Includes Heating (Peltier ON), Filling (basin pre-fill for Peltier), and
+// legacy Distilling (old mister) so historical rows still show as Active.
+const ACTIVE_STATES = ['Heating', 'Filling', 'Distilling', 'Collecting', 'Refilling'];
 
 export function computeDeviceStatus(
   reading: SensorReading | null,
   commands: DeviceCommands | null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  offlineThresholdMs: number = DEFAULT_offlineThresholdMs,
 ): DeviceStatus {
   // Never connected
   if (!reading) {
@@ -53,9 +57,23 @@ export function computeDeviceStatus(
     };
   }
 
-  // Offline check — last reading older than threshold
+  // Firmware-reported sleep (time-based 17:00-08:00 PST window).
+  // Treat as sleeping if the most recent reading is fresh AND state is Sleeping.
   const ageMs = now - new Date(reading.created_at).getTime();
-  if (ageMs > OFFLINE_THRESHOLD_MS) {
+  if (ageMs <= offlineThresholdMs && reading.state === 'Sleeping') {
+    return {
+      kind: 'sleeping',
+      label: 'Sleeping',
+      detail: 'Scheduled (auto)',
+      color: '#5856D6',
+      bgColor: '#F0F4FF',
+      iconName: 'moon',
+      canOverride: true,
+    };
+  }
+
+  // Offline check — last reading older than threshold
+  if (ageMs > offlineThresholdMs) {
     return {
       kind: 'offline',
       label: 'Offline',

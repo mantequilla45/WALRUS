@@ -26,16 +26,15 @@ async def get_latest_reading(device_id: Optional[str] = Query(None)):
         "success": true,
         "data": {
             "id": 123,
-            "created_at": "2025-02-11T12:00:00Z",
+            "created_at": "2026-05-17T12:00:00Z",
             "device_id": "WALRUS_001",
-            "basin_temp": 52.3,
-            "tds_ppm": 245,
-            "clean_level_cm": 15.2,
+            "basin_temp": 36.5,
+            "tds_ppm": 120,
             "intake_pump_active": false,
             "collect_pump_active": false,
-            "mist_active": true,
+            "peltier_active": true,
             "float_water_detect": true,
-            "state": "Distilling"
+            "state": "Heating"
         }
     }
     ```

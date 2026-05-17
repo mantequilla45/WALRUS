@@ -20,7 +20,7 @@ class ActuatorData(BaseModel):
     """Actuator states from ESP32"""
     intake_pump_active: Optional[bool] = Field(None, description="Intake pump on/off state")
     collect_pump_active: Optional[bool] = Field(None, description="Collection pump on/off state")
-    mist_active: Optional[bool] = Field(None, description="Ultrasonic mister on/off state")
+    peltier_active: Optional[bool] = Field(None, description="Peltier (basin heater) on/off state")
 
 
 class ESP32DataPayload(BaseModel):
@@ -42,7 +42,7 @@ class SensorReading(BaseModel):
     clean_level_cm: Optional[float] = None
     intake_pump_active: Optional[bool] = None
     collect_pump_active: Optional[bool] = None
-    mist_active: Optional[bool] = None
+    peltier_active: Optional[bool] = None
     float_water_detect: Optional[bool] = None
     state: Optional[str] = None
 
@@ -51,13 +51,28 @@ class DeviceCommandOverrides(BaseModel):
     """Per-actuator overrides. 'auto' = sensor logic, 'on' = force on, 'off' = force off."""
     intake_pump_override: str = "auto"
     collect_pump_override: str = "auto"
-    mist_override: str = "auto"
+    peltier_override: str = "auto"
+
+
+class DeviceConfig(BaseModel):
+    """Runtime configuration the firmware applies live (no flash needed).
+    All time-of-day values are minute-of-day in the device's local timezone (PST)."""
+    wake_minute: int = 480                    # 08:00
+    sleep_minute: int = 1020                  # 17:00
+    peltier_start_minute: int = 630           # 10:30
+    peltier_stop_minute: int = 870            # 14:30
+    peltier_on_minutes: int = 12
+    peltier_cycle_minutes: int = 30
+    collect_cycle_minutes: int = 30
+    collect_duration_seconds: int = 5
+    sync_interval_ms: int = 500
 
 
 class ESP32CommandsResponse(BaseModel):
     """Exact response shape returned to ESP32 from POST /api/esp32/data (per INTEGRATION.md)."""
     sleep: bool = False
     commands: DeviceCommandOverrides = DeviceCommandOverrides()
+    config: DeviceConfig = DeviceConfig()
 
 
 class SensorReadingResponse(BaseModel):

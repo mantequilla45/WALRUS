@@ -5,12 +5,14 @@ import { useRouter } from 'expo-router';
 import { walrusAPI, type SensorReading, type DeviceCommands, type Override } from '@/services/api';
 import { computeDeviceStatus } from '@/services/deviceStatus';
 import { useTheme, type Theme } from '@/contexts/theme';
+import { useAppSettings } from '@/contexts/appSettings';
 
-type FocusKey = 'tds' | 'clean_level' | 'basin_temp' | 'activations';
+type FocusKey = 'tds' | 'basin_temp' | 'activations';
 
 export default function HomeScreen() {
   const router = useRouter();
   const t = useTheme();
+  const { settings: appSettings } = useAppSettings();
   const styles = useMemo(() => createStyles(t), [t]);
 
   const [data, setData] = useState<SensorReading | null>(null);
@@ -29,23 +31,23 @@ export default function HomeScreen() {
   const goToAnalytics = (focus: FocusKey) =>
     router.push({ pathname: '/(tabs)/analytics', params: { focus } });
 
-  // Mist pulse animation
-  const mistPulse = useRef(new Animated.Value(0)).current;
+  // Peltier pulse animation (when heater is active)
+  const peltierPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (data?.mist_active) {
+    if (data?.peltier_active) {
       const anim = Animated.loop(
         Animated.sequence([
-          Animated.timing(mistPulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(mistPulse, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(peltierPulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(peltierPulse, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ])
       );
       anim.start();
       return () => anim.stop();
     } else {
-      mistPulse.setValue(0);
+      peltierPulse.setValue(0);
     }
-  }, [data?.mist_active]);
-  const mistScale = mistPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
+  }, [data?.peltier_active]);
+  const peltierScale = peltierPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
 
   const fetchData = useCallback(async () => {
     try {
@@ -111,7 +113,7 @@ export default function HomeScreen() {
     );
   }
 
-  const status = computeDeviceStatus(data, commands, now);
+  const status = computeDeviceStatus(data, commands, now, appSettings.offlineThresholdSeconds * 1000);
   const offline = status.kind === 'offline' || status.kind === 'unknown' || status.kind === 'sleeping';
   const isSleeping = status.kind === 'sleeping';
 
@@ -142,14 +144,11 @@ export default function HomeScreen() {
     n === null || n >= 999 || n < min || n > max ? null : n;
 
   const tdsRaw = validNumber(data.tds_ppm, 5000, 0);
-  const cleanRaw = validNumber(data.clean_level_cm, 100);
   const basinRaw = validNumber(data.basin_temp, 100);
 
   const tds = tdsRaw ?? 0;
-  const cleanLevel = cleanRaw ?? 0;
   const basin = basinRaw ?? 0;
   const tdsMissing = tdsRaw === null;
-  const cleanMissing = cleanRaw === null;
   const basinMissing = basinRaw === null;
   const floatOk = data.float_water_detect === true;
 
@@ -216,34 +215,13 @@ export default function HomeScreen() {
           </Text>
           <Text style={[
             styles.metricSub,
-            !offline && !tdsMissing && (tds < 300 ? styles.subPositive : styles.subWarning),
+            !offline && !tdsMissing && (tds < appSettings.tdsCleanMax ? styles.subPositive : styles.subWarning),
           ]}>
-            {offline ? 'No data' : tdsMissing ? 'Sensor error' : `${tds < 300 ? 'Clean' : tds < 500 ? 'Moderate' : 'Poor'} · ppm`}
+            {offline ? 'No data' : tdsMissing ? 'Sensor error' :
+              `${tds < appSettings.tdsCleanMax ? 'Clean' : tds < appSettings.tdsModerateMax ? 'Moderate' : 'Poor'} · ppm`}
           </Text>
         </Pressable>
 
-        <Pressable
-          onPress={() => goToAnalytics('clean_level')}
-          disabled={offline}
-          style={({ pressed }) => [styles.metricCard, offline && styles.metricCardOffline, pressed && !offline && styles.metricCardPressed]}
-        >
-          <View style={styles.metricHeader}>
-            <View style={[styles.metricIcon, { backgroundColor: t.cyanSoft }]}>
-              <Ionicons name="water-outline" size={16} color={t.cyan} />
-            </View>
-            <Text style={styles.metricLabel}>Clean Level</Text>
-            {!offline && <Ionicons name="chevron-forward" size={14} color={t.chevron} />}
-          </View>
-          <Text style={[styles.metricValue, (offline || cleanMissing) && styles.valueOff]}>
-            {offline ? '0.0' : cleanMissing ? '0.0' : cleanLevel.toFixed(1)}
-          </Text>
-          <Text style={[
-            styles.metricSub,
-            !offline && !cleanMissing && (cleanLevel > 5 ? styles.subPositive : styles.subWarning),
-          ]}>
-            {offline ? 'No data' : cleanMissing ? 'Sensor error' : `${cleanLevel > 5 ? 'Collected' : 'Low'} · cm`}
-          </Text>
-        </Pressable>
       </View>
 
       {/* ── Sensors ── */}
@@ -266,9 +244,10 @@ export default function HomeScreen() {
           </Text>
           <Text style={[
             styles.metricSub,
-            !offline && !basinMissing && (basin < 50 ? styles.subPositive : styles.subWarning),
+            !offline && !basinMissing && (basin < appSettings.basinNormalMax ? styles.subPositive : styles.subWarning),
           ]}>
-            {offline ? 'No data' : basinMissing ? 'Sensor error' : `${basin < 50 ? 'Normal' : basin < 55 ? 'Warm' : 'Hot'} · °C`}
+            {offline ? 'No data' : basinMissing ? 'Sensor error' :
+              `${basin < appSettings.basinNormalMax ? 'Normal' : basin < appSettings.basinWarmMax ? 'Warm' : 'Hot'} · °C`}
           </Text>
         </Pressable>
 
@@ -314,12 +293,12 @@ export default function HomeScreen() {
       </View>
       <View style={styles.row}>
         <ActuatorStatusCard
-          label="Mister"
-          icon="weather-fog"
-          active={!!data.mist_active}
-          override={commands?.mist_override}
+          label="Peltier"
+          icon="radiator"
+          active={!!data.peltier_active}
+          override={commands?.peltier_override}
           offline={offline}
-          animatedScale={data.mist_active ? mistScale : undefined}
+          animatedScale={data.peltier_active ? peltierScale : undefined}
           fullWidth
           onPress={() => goToAnalytics('activations')}
         />

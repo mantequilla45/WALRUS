@@ -9,7 +9,7 @@ import { useTheme, type Theme } from '@/contexts/theme';
 type Range = '24h' | '7d' | '30d';
 const RANGES: Range[] = ['24h', '7d', '30d'];
 
-type FocusKey = 'tds' | 'clean_level' | 'basin_temp' | 'activations';
+type FocusKey = 'tds' | 'basin_temp' | 'activations';
 
 const screenW = Dimensions.get('window').width;
 const chartW = screenW - 32; // 16px margin each side
@@ -80,7 +80,6 @@ export default function AnalyticsScreen() {
   );
 
   const metrics = useMemo(() => computeMetrics(rows), [rows]);
-  const levelSeries = useMemo(() => downsample(rows, 'clean_level_cm', range), [rows, range]);
   const tempSeries  = useMemo(() => downsample(rows, 'basin_temp', range), [rows, range]);
   const tdsSeries   = useMemo(() => downsample(rows, 'tds_ppm', range), [rows, range]);
   const activations = useMemo(() => activationsByBucket(rows, range), [rows, range]);
@@ -125,12 +124,12 @@ export default function AnalyticsScreen() {
         <>
           <View style={styles.summaryRow}>
             <SummaryCard
-              icon="water"
+              icon="power"
               iconBg={t.accentSoft}
               iconColor={t.accent}
-              label="Water Collected"
-              value={`${metrics.waterCollectedCm.toFixed(1)} cm`}
-              hint="≈ ? L"
+              label="Operating Time"
+              value={formatMinutes(metrics.operatingMs)}
+              hint={`Sleep ${formatMinutes(metrics.sleepingMs)}`}
             />
             <SummaryCard
               icon="repeat"
@@ -143,12 +142,12 @@ export default function AnalyticsScreen() {
           </View>
           <View style={styles.summaryRow}>
             <SummaryCard
-              icon="cloudy"
+              icon="flame-outline"
               iconBg={t.purpleSoft}
               iconColor={t.purple}
-              label="Mister Runtime"
-              value={formatMinutes(metrics.mistRuntimeMs)}
-              hint={`${metrics.mistCycles} starts`}
+              label="Peltier Runtime"
+              value={formatMinutes(metrics.peltierRuntimeMs)}
+              hint={`${metrics.peltierCycles} starts`}
             />
             <SummaryCard
               icon="flame"
@@ -177,28 +176,6 @@ export default function AnalyticsScreen() {
               hint={`${range} window`}
             />
           </View>
-
-          {levelSeries.data.length > 1 && (
-            <ChartCard
-              title="Clean Water Level"
-              subtitle="cm over time"
-              focused={params.focus === 'clean_level'}
-              onLayoutY={(y) => { chartYs.current.clean_level = y; }}
-            >
-              <LineChart
-                data={{ labels: levelSeries.labels, datasets: [{ data: levelSeries.data }] }}
-                width={chartW}
-                height={180}
-                chartConfig={lineConfig}
-                bezier
-                withInnerLines
-                withOuterLines={false}
-                verticalLabelRotation={range === '30d' ? 30 : 0}
-                xLabelsOffset={range === '30d' ? -6 : 0}
-                style={styles.chart}
-              />
-            </ChartCard>
-          )}
 
           {tempSeries.data.length > 1 && (
             <ChartCard
@@ -280,13 +257,14 @@ export default function AnalyticsScreen() {
 // ──────────────────────────────────────────────────────────────────
 
 interface Metrics {
-  waterCollectedCm: number;
   intakeCycles: number;
   collectCycles: number;
-  mistCycles: number;
+  peltierCycles: number;
   intakeRuntimeMs: number;
   collectRuntimeMs: number;
-  mistRuntimeMs: number;
+  peltierRuntimeMs: number;
+  operatingMs: number;   // time NOT in Sleeping state
+  sleepingMs: number;    // time in Sleeping state
   peakBasin: number;
   avgBasin: number;
   minTds: number;
@@ -296,15 +274,16 @@ interface Metrics {
 
 function computeMetrics(rows: SensorReading[]): Metrics {
   const empty: Metrics = {
-    waterCollectedCm: 0, intakeCycles: 0, collectCycles: 0, mistCycles: 0,
-    intakeRuntimeMs: 0, collectRuntimeMs: 0, mistRuntimeMs: 0,
+    intakeCycles: 0, collectCycles: 0, peltierCycles: 0,
+    intakeRuntimeMs: 0, collectRuntimeMs: 0, peltierRuntimeMs: 0,
+    operatingMs: 0, sleepingMs: 0,
     peakBasin: 0, avgBasin: 0, minTds: 0, maxTds: 0, avgTds: 0,
   };
   if (rows.length === 0) return empty;
 
-  let waterCollectedCm = 0;
-  let intakeCycles = 0, collectCycles = 0, mistCycles = 0;
-  let intakeRuntimeMs = 0, collectRuntimeMs = 0, mistRuntimeMs = 0;
+  let intakeCycles = 0, collectCycles = 0, peltierCycles = 0;
+  let intakeRuntimeMs = 0, collectRuntimeMs = 0, peltierRuntimeMs = 0;
+  let operatingMs = 0, sleepingMs = 0;
   let peakBasin = -Infinity;
   let basinSum = 0, basinN = 0;
   let minTds = Infinity, maxTds = -Infinity;
@@ -329,25 +308,23 @@ function computeMetrics(rows: SensorReading[]): Metrics {
     if (prev) {
       const dt = new Date(r.created_at).getTime() - new Date(prev.created_at).getTime();
 
-      if (r.clean_level_cm !== null && prev.clean_level_cm !== null) {
-        const delta = r.clean_level_cm - prev.clean_level_cm;
-        if (delta > 0) waterCollectedCm += delta;
-      }
-
       if (!prev.intake_pump_active && r.intake_pump_active) intakeCycles++;
       if (!prev.collect_pump_active && r.collect_pump_active) collectCycles++;
-      if (!prev.mist_active && r.mist_active) mistCycles++;
+      if (!prev.peltier_active && r.peltier_active) peltierCycles++;
 
       if (r.intake_pump_active) intakeRuntimeMs += dt;
       if (r.collect_pump_active) collectRuntimeMs += dt;
-      if (r.mist_active) mistRuntimeMs += dt;
+      if (r.peltier_active) peltierRuntimeMs += dt;
+
+      if (r.state === 'Sleeping') sleepingMs += dt;
+      else operatingMs += dt;
     }
   }
 
   return {
-    waterCollectedCm,
-    intakeCycles, collectCycles, mistCycles,
-    intakeRuntimeMs, collectRuntimeMs, mistRuntimeMs,
+    intakeCycles, collectCycles, peltierCycles,
+    intakeRuntimeMs, collectRuntimeMs, peltierRuntimeMs,
+    operatingMs, sleepingMs,
     peakBasin: peakBasin === -Infinity ? 0 : peakBasin,
     avgBasin: basinN ? basinSum / basinN : 0,
     minTds: minTds === Infinity ? 0 : minTds,
@@ -358,7 +335,7 @@ function computeMetrics(rows: SensorReading[]): Metrics {
 
 function downsample(
   rows: SensorReading[],
-  key: keyof Pick<SensorReading, 'clean_level_cm' | 'basin_temp' | 'tds_ppm'>,
+  key: keyof Pick<SensorReading, 'basin_temp' | 'tds_ppm'>,
   range: Range
 ): { labels: string[]; data: number[] } {
   if (rows.length === 0) return { labels: [], data: [] };

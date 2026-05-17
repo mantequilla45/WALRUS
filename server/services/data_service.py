@@ -8,6 +8,7 @@ from typing import List, Optional
 from config.supabase import get_supabase_admin
 from models.sensor_reading import (
     DeviceCommandOverrides,
+    DeviceConfig,
     ESP32CommandsResponse,
     ESP32DataPayload,
     SensorReading,
@@ -23,25 +24,46 @@ class DataService:
         self.device_commands_table = "device_commands"
 
     async def get_device_commands(self, device_id: str) -> ESP32CommandsResponse:
-        """Read current commands for a device. Defaults to all 'auto' / sleep=false if no row exists."""
+        """Read current commands + config for a device. Falls back to defaults if absent."""
         result = (
             self.supabase.table(self.device_commands_table)
-            .select("sleep, intake_pump_override, collect_pump_override, mist_override")
+            .select(
+                "sleep,"
+                "intake_pump_override, collect_pump_override, peltier_override,"
+                "wake_minute, sleep_minute,"
+                "peltier_start_minute, peltier_stop_minute,"
+                "peltier_on_minutes, peltier_cycle_minutes,"
+                "collect_cycle_minutes, collect_duration_seconds,"
+                "sync_interval_ms"
+            )
             .eq("device_id", device_id)
             .limit(1)
             .execute()
         )
-        if result.data:
-            row = result.data[0]
-            return ESP32CommandsResponse(
-                sleep=bool(row.get("sleep")),
-                commands=DeviceCommandOverrides(
-                    intake_pump_override=row.get("intake_pump_override") or "auto",
-                    collect_pump_override=row.get("collect_pump_override") or "auto",
-                    mist_override=row.get("mist_override") or "auto",
-                ),
-            )
-        return ESP32CommandsResponse()
+        if not result.data:
+            return ESP32CommandsResponse()
+
+        row = result.data[0]
+        default_config = DeviceConfig()
+        return ESP32CommandsResponse(
+            sleep=bool(row.get("sleep")),
+            commands=DeviceCommandOverrides(
+                intake_pump_override=row.get("intake_pump_override") or "auto",
+                collect_pump_override=row.get("collect_pump_override") or "auto",
+                peltier_override=row.get("peltier_override") or "auto",
+            ),
+            config=DeviceConfig(
+                wake_minute=row.get("wake_minute") or default_config.wake_minute,
+                sleep_minute=row.get("sleep_minute") or default_config.sleep_minute,
+                peltier_start_minute=row.get("peltier_start_minute") or default_config.peltier_start_minute,
+                peltier_stop_minute=row.get("peltier_stop_minute") or default_config.peltier_stop_minute,
+                peltier_on_minutes=row.get("peltier_on_minutes") or default_config.peltier_on_minutes,
+                peltier_cycle_minutes=row.get("peltier_cycle_minutes") or default_config.peltier_cycle_minutes,
+                collect_cycle_minutes=row.get("collect_cycle_minutes") or default_config.collect_cycle_minutes,
+                collect_duration_seconds=row.get("collect_duration_seconds") or default_config.collect_duration_seconds,
+                sync_interval_ms=row.get("sync_interval_ms") or default_config.sync_interval_ms,
+            ),
+        )
 
     async def store_sensor_data(self, payload: ESP32DataPayload) -> SensorReading:
         """
@@ -67,7 +89,7 @@ class DataService:
         if payload.actuators:
             data["intake_pump_active"] = payload.actuators.intake_pump_active
             data["collect_pump_active"] = payload.actuators.collect_pump_active
-            data["mist_active"] = payload.actuators.mist_active
+            data["peltier_active"] = payload.actuators.peltier_active
 
         # Insert into Supabase
         result = self.supabase.table(self.table_name).insert(data).execute()

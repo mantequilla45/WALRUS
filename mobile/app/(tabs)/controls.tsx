@@ -4,11 +4,13 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { walrusAPI, type DeviceCommands, type Override, type SensorReading } from '@/services/api';
 import { computeDeviceStatus } from '@/services/deviceStatus';
 import { useTheme, type Theme } from '@/contexts/theme';
+import { useAppSettings } from '@/contexts/appSettings';
 
-type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'mist_override' | 'peltier_override';
+type OverrideKey = 'intake_pump_override' | 'collect_pump_override' | 'peltier_override';
 
 export default function ControlsScreen() {
   const t = useTheme();
+  const { settings: appSettings } = useAppSettings();
   const styles = useMemo(() => createStyles(t), [t]);
   const [commands, setCommands] = useState<DeviceCommands | null>(null);
   const [reading, setReading] = useState<SensorReading | null>(null);
@@ -30,7 +32,7 @@ export default function ControlsScreen() {
     };
   }, []);
 
-  const status = computeDeviceStatus(reading, commands, now);
+  const status = computeDeviceStatus(reading, commands, now, appSettings.offlineThresholdSeconds * 1000);
   const locked = status.kind === 'offline' || status.kind === 'unknown';
 
   const setOverride = async (key: OverrideKey, value: Override) => {
@@ -53,7 +55,6 @@ export default function ControlsScreen() {
             sleep: false,
             intake_pump_override: 'auto',
             collect_pump_override: 'auto',
-            mist_override: 'auto',
             peltier_override: 'auto',
           }
         : prev
@@ -62,7 +63,6 @@ export default function ControlsScreen() {
       sleep: false,
       intake_pump_override: 'auto',
       collect_pump_override: 'auto',
-      mist_override: 'auto',
       peltier_override: 'auto',
     });
     if (next) setCommands(next);
@@ -71,7 +71,6 @@ export default function ControlsScreen() {
   const anyOverride =
     (commands?.intake_pump_override && commands.intake_pump_override !== 'auto') ||
     (commands?.collect_pump_override && commands.collect_pump_override !== 'auto') ||
-    (commands?.mist_override && commands.mist_override !== 'auto') ||
     (commands?.peltier_override && commands.peltier_override !== 'auto') ||
     commands?.sleep;
 
@@ -113,13 +112,6 @@ export default function ControlsScreen() {
         icon="water-pump-off"
         value={commands?.collect_pump_override ?? 'auto'}
         onChange={(v) => setOverride('collect_pump_override', v)}
-        disabled={locked}
-      />
-      <ActuatorCard
-        label="Mister"
-        icon="weather-fog"
-        value={commands?.mist_override ?? 'auto'}
-        onChange={(v) => setOverride('mist_override', v)}
         disabled={locked}
       />
       <ActuatorCard

@@ -30,17 +30,16 @@ async def receive_sensor_data(
     {
         "device_id": "WALRUS_001",
         "sensors": {
-            "basin_temp": 52.3,
-            "tds_ppm": 245,
-            "clean_level_cm": 15.2,
+            "basin_temp": 36.5,
+            "tds_ppm": 120,
             "float_water_detect": true
         },
         "actuators": {
             "intake_pump_active": false,
             "collect_pump_active": false,
-            "mist_active": true
+            "peltier_active": true
         },
-        "state": "Distilling"
+        "state": "Heating"
     }
     ```
 
@@ -51,7 +50,7 @@ async def receive_sensor_data(
         "commands": {
             "intake_pump_override":  "auto",
             "collect_pump_override": "auto",
-            "mist_override":         "auto"
+            "peltier_override":      "auto"
         }
     }
     ```
@@ -77,7 +76,7 @@ async def receive_sensor_data(
             f"| sleep={commands.sleep} "
             f"intake={commands.commands.intake_pump_override} "
             f"collect={commands.commands.collect_pump_override} "
-            f"mist={commands.commands.mist_override}"
+            f"peltier={commands.commands.peltier_override}"
         )
 
         return commands

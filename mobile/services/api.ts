@@ -15,7 +15,7 @@ export interface SensorReading {
   clean_level_cm: number | null;
   intake_pump_active: boolean | null;
   collect_pump_active: boolean | null;
-  mist_active: boolean | null;
+  peltier_active: boolean | null;
   float_water_detect: boolean | null;
   state: string | null;
 }
@@ -33,10 +33,32 @@ export interface DeviceCommands {
   sleep: boolean;
   intake_pump_override: Override;
   collect_pump_override: Override;
-  mist_override: Override;
   peltier_override: Override;
+
+  // Runtime config — applied live by the firmware on next sync
+  wake_minute: number;              // 0-1439, PST minute-of-day
+  sleep_minute: number;
+  peltier_start_minute: number;
+  peltier_stop_minute: number;
+  peltier_on_minutes: number;
+  peltier_cycle_minutes: number;
+  collect_cycle_minutes: number;
+  collect_duration_seconds: number;
+  sync_interval_ms: number;
+
   updated_at: string;
 }
+
+export type DeviceConfigKey =
+  | 'wake_minute'
+  | 'sleep_minute'
+  | 'peltier_start_minute'
+  | 'peltier_stop_minute'
+  | 'peltier_on_minutes'
+  | 'peltier_cycle_minutes'
+  | 'collect_cycle_minutes'
+  | 'collect_duration_seconds'
+  | 'sync_interval_ms';
 
 const DEFAULT_DEVICE_ID = 'WALRUS_001';
 
@@ -69,7 +91,7 @@ export const walrusAPI = {
         return { success: true, data: null, message: 'Waiting for first reading' };
       }
 
-      console.log('[API] getLatest success:', data.id, data.created_at);
+      console.log('[API] getLatest success: id', data.id, 'at', new Date(data.created_at).toLocaleString());
       return { success: true, data };
     } catch (e: any) {
       console.error('[API] getLatest exception:', e.message, e);
@@ -115,7 +137,7 @@ export const walrusAPI = {
           console.error('[API] getHistory page error:', error.message);
           return { success: false, data: [], count: 0 };
         }
-        console.log(`[API] getHistory page ${p}: ${data?.length ?? 0} rows from cursor ${cursor}`);
+        console.log(`[API] getHistory page ${p}: ${data?.length ?? 0} rows from cursor ${new Date(cursor).toLocaleString()}`);
         if (!data || data.length === 0) break;
         all.push(...(data as SensorReading[]));
         if (data.length < PAGE) break; // last page
@@ -136,8 +158,12 @@ export const walrusAPI = {
     callback: (reading: SensorReading) => void,
     deviceId: string = DEFAULT_DEVICE_ID
   ) => {
+    console.log('[Realtime] subscribing to sensor_readings for', deviceId);
+    // Unique channel name per subscription instance — avoids stale-binding errors
+    // when the same channel name has been used with different filters before.
+    const channelName = `sensor_readings:${deviceId}:${Date.now()}`;
     const channel = supabase
-      .channel(`sensor_readings_${deviceId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -147,10 +173,13 @@ export const walrusAPI = {
           filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
+          console.log('[Realtime] INSERT event received: id', (payload.new as any)?.id, 'at', new Date((payload.new as any)?.created_at).toLocaleString());
           callback(payload.new as SensorReading);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] sensor_readings subscription status:', status, err ?? '');
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -180,7 +209,13 @@ export const walrusAPI = {
    * Update (or create) command overrides for a device.
    */
   setDeviceCommands: async (
-    patch: Partial<Pick<DeviceCommands, 'sleep' | 'intake_pump_override' | 'collect_pump_override' | 'mist_override' | 'peltier_override'>>,
+    patch: Partial<Pick<DeviceCommands,
+      | 'sleep'
+      | 'intake_pump_override'
+      | 'collect_pump_override'
+      | 'peltier_override'
+      | DeviceConfigKey
+    >>,
     deviceId: string = DEFAULT_DEVICE_ID
   ): Promise<DeviceCommands | null> => {
     const { data, error } = await supabase
@@ -203,8 +238,9 @@ export const walrusAPI = {
     callback: (commands: DeviceCommands) => void,
     deviceId: string = DEFAULT_DEVICE_ID
   ) => {
+    const channelName = `device_commands:${deviceId}:${Date.now()}`;
     const channel = supabase
-      .channel(`device_commands_${deviceId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
